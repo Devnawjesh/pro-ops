@@ -1,0 +1,186 @@
+{
+  "info": {
+    "_postman_id": "d3b2d8c3-6d2f-4c0a-9c8a-8f6db0d0a6a1",
+    "name": "Pro-Ops - Master SKU",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Master SKU endpoints (create/list/view/update/status/delete) using Bearer token from {{accessToken}}"
+  },
+  "item": [
+    {
+      "name": "Auth - Login (save tokens)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "// Adjust based on your API response shape",
+              "if (json?.data?.access_token) pm.environment.set('accessToken', json.data.access_token);",
+              "else if (json?.access_token) pm.environment.set('accessToken', json.access_token);",
+              "",
+              "if (json?.data?.refresh_token) pm.environment.set('refreshToken', json.data.refresh_token);",
+              "else if (json?.refresh_token) pm.environment.set('refreshToken', json.refresh_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "SKU - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"SKU-0001\",\n  \"name\": \"Coca Cola 250ml\",\n  \"brand_id\": null,\n  \"category_id\": null,\n  \"sub_category_id\": null,\n  \"pack_size\": \"250ml\",\n  \"base_uom\": \"PCS\",\n  \"sales_uom\": \"PCS\",\n  \"conversion_to_base\": \"1\",\n  \"mrp\": \"30.00\",\n  \"tax_rate\": \"0\",\n  \"is_batch_tracked\": false,\n  \"is_expiry_tracked\": false,\n  \"effective_from\": null,\n  \"effective_to\": null\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/skus",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "skus"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "try {",
+              "  const json = pm.response.json();",
+              "  const skuId = json?.data?.id || json?.id;",
+              "  if (skuId) pm.environment.set('skuId', String(skuId));",
+              "} catch (e) {}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "SKU - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/master/skus?page=1&limit=20&q=",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "skus"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            { "key": "q", "value": "" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "SKU - View by ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/master/skus/{{skuId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "skus", "{{skuId}}"]
+        }
+      }
+    },
+    {
+      "name": "SKU - Update",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Coca Cola 250ml (Updated)\",\n  \"mrp\": \"32.00\",\n  \"tax_rate\": \"5.00\",\n  \"is_batch_tracked\": true,\n  \"is_expiry_tracked\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/skus/{{skuId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "skus", "{{skuId}}"]
+        }
+      }
+    },
+    {
+      "name": "SKU - Set Status (Active/Inactive)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Temporarily inactive\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/skus/{{skuId}}/status/2",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "skus", "{{skuId}}", "status", "2"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "SKU - Delete (Soft Delete)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/master/skus/{{skuId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "skus", "{{skuId}}"]
+        }
+      }
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Ensure baseUrl exists; set it in your environment like: http://localhost:3000",
+          "if (!pm.environment.get('baseUrl')) {",
+          "  pm.environment.set('baseUrl', 'http://localhost:3000');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "skuId", "value": "" }
+  ]
+}

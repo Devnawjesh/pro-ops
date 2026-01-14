@@ -1,0 +1,141 @@
+{
+  "info": {
+    "name": "Pro-OPS - Outlet Excel Imports",
+    "_postman_id": "f3a1b6c7-9d6f-4e3d-bf98-6f2f0a1f5c9a",
+    "description": "Excel import endpoints for Outlet create + Outlet->Org mapping + Outlet->Distributor mapping (by code). File field name: file.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "{{baseUrl}}" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (save tokens)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "auth", "login" ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "",
+                  "// support both shapes: {data:{access_token}} or {access_token}",
+                  "const accessToken = json?.data?.access_token ?? json?.access_token;",
+                  "const refreshToken = json?.data?.refresh_token ?? json?.refresh_token;",
+                  "",
+                  "if (accessToken) pm.environment.set('accessToken', accessToken);",
+                  "if (refreshToken) pm.environment.set('refreshToken', refreshToken);",
+                  "",
+                  "pm.test('Login success + token saved', function () {",
+                  "  pm.expect(accessToken).to.be.ok;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Outlet - Excel Imports",
+      "item": [
+        {
+          "name": "Outlets Bulk Create (Excel) - md_outlet.bulk_import",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/outlets/bulk-excel",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "outlets", "bulk-excel" ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "CHOOSE_FILE_IN_POSTMAN.xlsx",
+                  "description": "Use: template_outlets_bulk_create.xlsx"
+                }
+              ]
+            },
+            "description": "Upload Excel for outlets create. form-data key must be 'file'."
+          }
+        },
+        {
+          "name": "Outlet -> Org Mapping (Excel, by code) - md_outlet_org.bulk_import",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/outlets/map/org-by-code/bulk-excel",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "outlets", "map", "org-by-code", "bulk-excel" ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "CHOOSE_FILE_IN_POSTMAN.xlsx",
+                  "description": "Use: template_outlet_org_mapping_by_code.xlsx (columns: outlet_code, org_node_code, effective_from, effective_to)"
+                }
+              ]
+            },
+            "description": "Upload Excel for outlet->org mapping using codes."
+          }
+        },
+        {
+          "name": "Outlet -> Distributor Mapping (Excel, by code) - md_outlet_distributor.bulk_import",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/outlets/map/distributor-by-code/bulk-excel",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "outlets", "map", "distributor-by-code", "bulk-excel" ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "CHOOSE_FILE_IN_POSTMAN.xlsx",
+                  "description": "Use: template_outlet_distributor_mapping_by_code.xlsx (columns: outlet_code, distributor_code, effective_from, effective_to)"
+                }
+              ]
+            },
+            "description": "Upload Excel for outlet->distributor mapping using codes."
+          }
+        }
+      ]
+    }
+  ]
+}

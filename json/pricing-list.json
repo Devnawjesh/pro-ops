@@ -1,0 +1,323 @@
+{
+  "info": {
+    "name": "Pro-Ops Pricing (Step-by-step File Upload)",
+    "_postman_id": "b9b9b9b9-1111-4444-8888-b9b9b9b91111",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "token", "value": "PASTE_JWT_HERE" },
+
+    { "key": "priceListId", "value": "1" },
+    { "key": "schemeId", "value": "1" },
+
+    { "key": "priceListXlsxPath", "value": "" },
+    { "key": "schemeXlsxPath", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0) Auth (Optional)",
+      "item": [
+        {
+          "name": "Login (sets token automatically)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const token = json?.data?.access_token || json?.access_token;",
+                  "  if (token) pm.collectionVariables.set('token', token);",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "1) Price Lists (CRUD + File Import)",
+      "item": [
+        {
+          "name": "1.1 Create Price List",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/price-lists",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "price-lists"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"PL-DEFAULT\",\n  \"name\": \"Default Price List\",\n  \"price_list_type\": 1,\n  \"remarks\": \"Base prices\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const j = pm.response.json();",
+                  "  const id = j?.id || j?.data?.id;",
+                  "  if (id) pm.collectionVariables.set('priceListId', String(id));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+
+        {
+          "name": "1.2 List Price Lists",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/price-lists?page=1&limit=20&q=&price_list_type=",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "price-lists"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "" },
+                { "key": "price_list_type", "value": "" }
+              ]
+            }
+          }
+        },
+
+        {
+          "name": "1.3 STEP: Bulk Import Price List via FILE (multipart/form-data)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/price-lists/bulk-import-file",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "price-lists", "bulk-import-file"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "{{priceListXlsxPath}}"
+                }
+              ]
+            }
+          },
+          "description": "STEP-BY-STEP:\n1) Set collection variable priceListXlsxPath to your local XLSX file path in Postman.\n2) Send this request.\n3) It will import: price_list + price_list_item + price_list_scope sheets by default names."
+        },
+
+        {
+          "name": "1.4 Get Price List (verify items + scopes)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/price-lists/{{priceListId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "price-lists", "{{priceListId}}"]
+            }
+          },
+          "description": "After importing, this should return: { ...priceList, items: [...], scopes: [...] }"
+        },
+
+        {
+          "name": "1.5 Resolve Best Price",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/resolve-price",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "resolve-price"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-01-10\",\n  \"distributor_id\": \"1\",\n  \"outlet_type\": 1,\n  \"org_node_id\": \"10\",\n  \"sku_code\": \"SKU-0001\"\n}"
+            }
+          }
+        },
+
+        {
+          "name": "1.6 Resolve Best Price (Bulk)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/resolve-price/bulk",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "resolve-price", "bulk"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-01-10\",\n  \"context\": {\n    \"distributor_id\": \"1\",\n    \"outlet_type\": 1,\n    \"org_node_id\": \"10\"\n  },\n  \"skus\": [\n    { \"sku_code\": \"SKU-0001\" },\n    { \"sku_code\": \"SKU-0002\" }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "2) Schemes (CRUD + File Import)",
+      "item": [
+        {
+          "name": "2.1 Create Scheme",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/schemes",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "schemes"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SCH-0001\",\n  \"name\": \"5% discount on SKU-0001\",\n  \"scheme_type\": 3,\n  \"priority\": 100,\n  \"can_stack\": false,\n  \"status\": 1,\n  \"effective_from\": \"2026-01-01\",\n  \"effective_to\": null,\n  \"distributor_id\": null,\n  \"outlet_type\": null,\n  \"org_node_id\": null\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const j = pm.response.json();",
+                  "  const id = j?.id || j?.data?.id;",
+                  "  if (id) pm.collectionVariables.set('schemeId', String(id));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+
+        {
+          "name": "2.2 List Schemes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/schemes?page=1&limit=20&q=&scheme_type=&distributor_id=",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "schemes"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "" },
+                { "key": "scheme_type", "value": "" },
+                { "key": "distributor_id", "value": "" }
+              ]
+            }
+          }
+        },
+
+        {
+          "name": "2.3 STEP: Bulk Import Scheme via FILE (multipart/form-data)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/schemes/bulk-import-file",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "schemes", "bulk-import-file"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "{{schemeXlsxPath}}"
+                }
+              ]
+            }
+          },
+          "description": "STEP-BY-STEP:\n1) Set collection variable schemeXlsxPath to your local XLSX file path in Postman.\n2) Send this request.\n3) It will import: scheme + scheme_rule sheets by default names."
+        },
+
+        {
+          "name": "2.4 Get Scheme (verify rules)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/schemes/{{schemeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "schemes", "{{schemeId}}"]
+            }
+          }
+        },
+
+        {
+          "name": "2.5 Apply Schemes To Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pricing/apply-schemes",
+              "host": ["{{baseUrl}}"],
+              "path": ["pricing", "apply-schemes"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-01-10\",\n  \"distributor_id\": \"1\",\n  \"outlet_type\": 1,\n  \"org_node_id\": \"10\",\n  \"lines\": [\n    { \"sku_id\": \"1\", \"qty\": 10, \"unit_price\": 95 },\n    { \"sku_id\": \"2\", \"qty\": 5, \"unit_price\": 50 }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

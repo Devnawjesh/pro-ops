@@ -1,0 +1,812 @@
+{
+  "info": {
+    "name": "Pro-Ops ORG (Company, Org Nodes, Routes)",
+    "_postman_id": "2f4b2e8a-1b5c-4b7d-8b44-7f9f2c3d0a12",
+    "description": "Master ORG module APIs: Company, OrgHierarchy nodes (bulk import, tree, subordinate routes), Route (weekday planning).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "companyId",
+      "value": "1"
+    },
+    {
+      "key": "nodeId",
+      "value": "1"
+    },
+    {
+      "key": "routeId",
+      "value": "1"
+    },
+    {
+      "key": "day",
+      "value": "0"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (save tokens)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.access_token) {",
+                  "  pm.environment.set('accessToken', json.data.access_token);",
+                  "} else if (json?.access_token) {",
+                  "  pm.environment.set('accessToken', json.access_token);",
+                  "}",
+                  "if (json?.data?.refresh_token) {",
+                  "  pm.environment.set('refreshToken', json.data.refresh_token);",
+                  "} else if (json?.refresh_token) {",
+                  "  pm.environment.set('refreshToken', json.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Company",
+      "item": [
+        {
+          "name": "Create Company",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/org/companies",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "companies"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"COMP-01\",\n  \"name\": \"ProMentor Ltd\",\n  \"legal_name\": \"ProMentor Limited\",\n  \"address\": \"Dhaka\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Companies",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/companies?page=1&limit=20&q=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "companies"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "q",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "View Company",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/companies/{{companyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "companies",
+                "{{companyId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Company",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/org/companies/{{companyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "companies",
+                "{{companyId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ProMentor Ltd (Updated)\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Company (soft)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/companies/{{companyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "companies",
+                "{{companyId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Org Nodes (Hierarchy)",
+      "item": [
+        {
+          "name": "Bulk Import Org Nodes (upsert)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes/bulk-import",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes",
+                "bulk-import"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"upsert\": true,\n  \"rows\": [\n    {\n      \"level_no\": 1,\n      \"code\": \"HOS-01\",\n      \"name\": \"Head Office\",\n      \"sort_order\": 1\n    },\n    {\n      \"level_no\": 2,\n      \"code\": \"DIV-01\",\n      \"name\": \"Dhaka Division\",\n      \"parent_code\": \"HOS-01\",\n      \"sort_order\": 1\n    },\n    {\n      \"level_no\": 3,\n      \"code\": \"REG-01\",\n      \"name\": \"Dhaka Region\",\n      \"parent_code\": \"DIV-01\",\n      \"sort_order\": 1\n    },\n    {\n      \"level_no\": 4,\n      \"code\": \"AREA-01\",\n      \"name\": \"Gulshan Area\",\n      \"parent_code\": \"REG-01\",\n      \"sort_order\": 1\n    },\n    {\n      \"level_no\": 5,\n      \"code\": \"TER-01\",\n      \"name\": \"Gulshan Territory\",\n      \"parent_code\": \"AREA-01\",\n      \"sort_order\": 1\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Org Node",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"TER-02\",\n  \"name\": \"Banani Territory\",\n  \"level_no\": 5,\n  \"parent_id\": \"{{nodeId}}\",\n  \"sort_order\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "List Org Nodes",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes?page=1&limit=20&level_no=&parent_id=&q=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "level_no",
+                  "value": ""
+                },
+                {
+                  "key": "parent_id",
+                  "value": ""
+                },
+                {
+                  "key": "q",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "View Org Node",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes/{{nodeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes",
+                "{{nodeId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Org Node",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes/{{nodeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes",
+                "{{nodeId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Node Name\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Org Node (soft)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes/{{nodeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes",
+                "{{nodeId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Tree (dropdown) up to level 5",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes/tree?level_no=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes",
+                "tree"
+              ],
+              "query": [
+                {
+                  "key": "level_no",
+                  "value": "5"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Tree (subtree by root_id + include routes)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes/tree?root_id={{nodeId}}&level_no=5&include_routes=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes",
+                "tree"
+              ],
+              "query": [
+                {
+                  "key": "root_id",
+                  "value": "{{nodeId}}"
+                },
+                {
+                  "key": "level_no",
+                  "value": "5"
+                },
+                {
+                  "key": "include_routes",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Subordinate Routes under Org Node",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/nodes/{{nodeId}}/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "nodes",
+                "{{nodeId}}",
+                "routes"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Routes",
+      "item": [
+        {
+          "name": "Create Route",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/org/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "routes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"R-0001\",\n  \"name\": \"Gulshan Route A\",\n  \"territory_id\": \"{{nodeId}}\",\n  \"default_delivery_day\": 0,\n  \"is_delivery_route\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "List Routes",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/routes?page=1&limit=20&q=&territory_id=&is_delivery_route=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "routes"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "q",
+                  "value": ""
+                },
+                {
+                  "key": "territory_id",
+                  "value": ""
+                },
+                {
+                  "key": "is_delivery_route",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "View Route",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/routes/{{routeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "routes",
+                "{{routeId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Route",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/org/routes/{{routeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "routes",
+                "{{routeId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"default_delivery_day\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Route (soft)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/routes/{{routeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "routes",
+                "{{routeId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Routes by Weekday",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/master/org/routes/by-weekday?day={{day}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "org",
+                "routes",
+                "by-weekday"
+              ],
+              "query": [
+                {
+                  "key": "day",
+                  "value": "{{day}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

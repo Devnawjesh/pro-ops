@@ -1,0 +1,202 @@
+{
+  "info": {
+    "_postman_id": "d7b2c3a2-1111-4444-9999-2a3c4d5e6f77",
+    "name": "ProOps - Outlets",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "accessToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Outlet - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets", "host": ["{{baseUrl}}"], "path": ["master", "outlets"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"OUT-0001\",\n  \"name\": \"ABC Store\",\n  \"outlet_type\": 1,\n  \"owner_name\": \"Mr X\",\n  \"mobile\": \"01700000000\",\n  \"address\": \"Dhaka\",\n  \"lat\": \"23.810331\",\n  \"lng\": \"90.412521\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Outlet - Bulk Create (JSON)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/bulk", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "bulk"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rows\": [\n    {\"code\":\"OUT-0002\",\"name\":\"Shop 2\",\"outlet_type\":1},\n    {\"code\":\"OUT-0003\",\"name\":\"Shop 3\",\"outlet_type\":1}\n  ]\n}"
+        }
+      }
+    },
+    {
+      "name": "Outlet - Bulk Create (Excel upload)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/bulk-excel", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "bulk-excel"] },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": "" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Outlet - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/outlets?page=1&limit=20&q=",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "outlets"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            { "key": "q", "value": "" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Outlet - View",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/1", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "1"] }
+      }
+    },
+    {
+      "name": "Outlet - Update",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/1", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "1"] },
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"ABC Store Updated\"\n}" }
+      }
+    },
+    {
+      "name": "Outlet - Delete",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/1", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "1"] }
+      }
+    },
+    {
+      "name": "Map Outlet -> Org (single)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/map/org", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "map", "org"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"outlet_id\": \"1\",\n  \"org_node_id\": \"10\",\n  \"effective_from\": \"2026-01-01\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Map Outlet -> Org (bulk JSON)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/map/org/bulk", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "map", "org", "bulk"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rows\": [\n    {\"outlet_id\":\"1\",\"org_node_id\":\"10\",\"effective_from\":\"2026-01-01\"},\n    {\"outlet_id\":\"2\",\"org_node_id\":\"10\",\"effective_from\":\"2026-01-01\"}\n  ]\n}"
+        }
+      }
+    },
+    {
+      "name": "Map Outlet -> Org (bulk Excel upload)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/map/org/bulk-excel", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "map", "org", "bulk-excel"] },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": "" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Map Outlet -> Distributor (single)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/map/distributor", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "map", "distributor"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"outlet_id\": \"1\",\n  \"distributor_id\": \"5\",\n  \"effective_from\": \"2026-01-01\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Map Outlet -> Distributor (bulk JSON)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/map/distributor/bulk", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "map", "distributor", "bulk"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rows\": [\n    {\"outlet_id\":\"1\",\"distributor_id\":\"5\",\"effective_from\":\"2026-01-01\"},\n    {\"outlet_id\":\"2\",\"distributor_id\":\"5\",\"effective_from\":\"2026-01-01\"}\n  ]\n}"
+        }
+      }
+    },
+    {
+      "name": "Map Outlet -> Distributor (bulk Excel upload)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/outlets/map/distributor/bulk-excel", "host": ["{{baseUrl}}"], "path": ["master", "outlets", "map", "distributor", "bulk-excel"] },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": "" }
+          ]
+        }
+      }
+    }
+  ]
+}

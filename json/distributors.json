@@ -1,0 +1,188 @@
+{
+  "info": {
+    "_postman_id": "6f3d0e8a-9a6b-4c7e-8f7c-58f8c3f3a9a1",
+    "name": "Pro-Ops - Master - Distributors",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Master Distributors endpoints (PRIMARY + SUB) with JwtAuthGuard + PermissionsGuard. Uses req.user auth."
+  },
+  "item": [
+    {
+      "name": "Create PRIMARY Distributor",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"D-0001\",\n  \"name\": \"ABC Distributors\",\n  \"distributor_type\": 1,\n  \"parent_distributor_id\": null,\n  \"trade_name\": \"ABC Trade\",\n  \"owner_name\": \"Mr. Owner\",\n  \"mobile\": \"01700000000\",\n  \"email\": \"abc@example.com\",\n  \"address\": \"Dhaka\",\n  \"credit_limit\": \"100000.00\",\n  \"payment_terms_days\": 15,\n  \"vat_registration_no\": \"VAT-123\",\n  \"tin_no\": \"TIN-456\",\n  \"erp_partner_id\": \"ERP-ABC-01\",\n  \"effective_from\": null,\n  \"effective_to\": null\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors"]
+        }
+      }
+    },
+    {
+      "name": "Create SUB Distributor (under PRIMARY)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"SD-0001\",\n  \"name\": \"ABC Sub Distributor\",\n  \"distributor_type\": 2,\n  \"parent_distributor_id\": \"{{primaryDistributorId}}\",\n  \"trade_name\": \"ABC Sub Trade\",\n  \"owner_name\": \"Sub Owner\",\n  \"mobile\": \"01711111111\",\n  \"email\": \"sub@example.com\",\n  \"address\": \"Dhaka\",\n  \"credit_limit\": \"30000.00\",\n  \"payment_terms_days\": 7,\n  \"vat_registration_no\": null,\n  \"tin_no\": null,\n  \"erp_partner_id\": null,\n  \"effective_from\": null,\n  \"effective_to\": null\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors"]
+        }
+      }
+    },
+    {
+      "name": "List Distributors (default - effective + active)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }],
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors?page=1&limit=20&q=&sort=id&order=DESC",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            { "key": "q", "value": "" },
+            { "key": "sort", "value": "id" },
+            { "key": "order", "value": "DESC" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List PRIMARY Distributors Only",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }],
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors?distributor_type=1&page=1&limit=50",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors"],
+          "query": [
+            { "key": "distributor_type", "value": "1" },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "50" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List SUB Distributors under a PRIMARY",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }],
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors?distributor_type=2&parent_distributor_id={{primaryDistributorId}}&page=1&limit=50",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors"],
+          "query": [
+            { "key": "distributor_type", "value": "2" },
+            { "key": "parent_distributor_id", "value": "{{primaryDistributorId}}" },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "50" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List (include inactive + not only effective)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }],
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors?page=1&limit=50&include_inactive=true&is_effective=false",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "50" },
+            { "key": "include_inactive", "value": "true" },
+            { "key": "is_effective", "value": "false" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Distributor by ID",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }],
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors/{{distributorId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors", "{{distributorId}}"]
+        }
+      }
+    },
+    {
+      "name": "Update Distributor",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"ABC Distributors (Updated)\",\n  \"trade_name\": \"ABC Trade Updated\",\n  \"mobile\": \"01722222222\",\n  \"credit_limit\": \"150000.00\",\n  \"payment_terms_days\": 20,\n  \"effective_from\": \"2026-01-01\",\n  \"effective_to\": null\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors/{{distributorId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors", "{{distributorId}}"]
+        }
+      }
+    },
+    {
+      "name": "Inactivate Distributor",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Business closed\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors/{{distributorId}}/inactivate",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors", "{{distributorId}}", "inactivate"]
+        }
+      }
+    },
+    {
+      "name": "Activate Distributor",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }],
+        "url": {
+          "raw": "{{baseUrl}}/master/distributors/{{distributorId}}/activate",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "distributors", "{{distributorId}}", "activate"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "accessToken", "value": "" },
+    { "key": "primaryDistributorId", "value": "1" },
+    { "key": "distributorId", "value": "1" }
+  ]
+}

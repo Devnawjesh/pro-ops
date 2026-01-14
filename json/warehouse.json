@@ -1,0 +1,139 @@
+{
+  "info": {
+    "name": "Pro-Ops – Warehouse Master",
+    "_postman_id": "f2a7d5d6-7a8a-4d6a-9f45-6b1b1a9a2c11",
+    "description": "Warehouse master endpoints (CRUD) with JWT + permissions.\n\nPermissions:\n- md_warehouse.create\n- md_warehouse.list\n- md_warehouse.view\n- md_warehouse.update\n- md_warehouse.delete",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "accessToken", "value": "" },
+    { "key": "warehouseId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Create Warehouse",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/warehouses",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "warehouses"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"WH-001\",\n  \"name\": \"Central Warehouse\",\n  \"owner_type\": 1,\n  \"owner_id\": null,\n  \"address\": \"Dhaka, Bangladesh\",\n  \"lat\": \"23.810331\",\n  \"lng\": \"90.412521\",\n  \"is_batch_tracked\": true,\n  \"is_expiry_tracked\": true,\n  \"effective_from\": \"2026-01-01\",\n  \"effective_to\": null\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json?.success && json?.data?.id) {",
+              "  pm.collectionVariables.set('warehouseId', json.data.id.toString());",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List Warehouses",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/warehouses?page=1&limit=20&q=&status=&owner_type=&owner_id=&sort_by=updated_at&sort_dir=DESC",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "warehouses"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            { "key": "q", "value": "" },
+            { "key": "status", "value": "" },
+            { "key": "owner_type", "value": "" },
+            { "key": "owner_id", "value": "" },
+            { "key": "sort_by", "value": "updated_at" },
+            { "key": "sort_dir", "value": "DESC" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Warehouse By Id",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/warehouses/{{warehouseId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "warehouses", "{{warehouseId}}"]
+        }
+      }
+    },
+    {
+      "name": "Update Warehouse",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/warehouses/{{warehouseId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "warehouses", "{{warehouseId}}"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Central Warehouse (Updated)\",\n  \"address\": \"Updated address\",\n  \"is_batch_tracked\": true,\n  \"is_expiry_tracked\": false,\n  \"status\": 1\n}"
+        }
+      }
+    },
+    {
+      "name": "Delete Warehouse (Soft Delete)",
+      "request": {
+        "method": "DELETE",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/master/warehouses/{{warehouseId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["master", "warehouses", "{{warehouseId}}"]
+        }
+      }
+    },
+    {
+  "name": "Make Default Warehouse",
+  "request": {
+    "method": "PATCH",
+    "auth": {
+      "type": "bearer",
+      "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+    },
+    "url": {
+      "raw": "{{baseUrl}}/master/warehouses/{{warehouseId}}/make-default",
+      "host": ["{{baseUrl}}"],
+      "path": ["master", "warehouses", "{{warehouseId}}", "make-default"]
+    }
+  }
+}
+  ]
+}

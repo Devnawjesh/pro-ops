@@ -1,0 +1,464 @@
+{
+  "info": {
+    "_postman_id": "b0c0d4b0-6e7b-4f5b-8d0d-2c4a1b1c9991",
+    "name": "Pro-Ops - Master - Product Taxonomy",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Brands",
+      "item": [
+        {
+          "name": "Brands - List (Active Only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/brands?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "brands"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Brands - List (Include Inactive)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/brands?include_inactive=true&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "brands"],
+              "query": [
+                { "key": "include_inactive", "value": "true" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Brands - Get By Id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/brands/{{brandId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "brands", "{{brandId}}"]
+            }
+          }
+        },
+        {
+          "name": "Brands - Create",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res && res.id) pm.environment.set('brandId', String(res.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"BR-001\",\n  \"name\": \"ACME\",\n  \"description\": \"Demo brand\",\n  \"effective_from\": \"2026-01-01\",\n  \"effective_to\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/brands",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "brands"]
+            }
+          }
+        },
+        {
+          "name": "Brands - Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ACME Updated\",\n  \"description\": \"Updated description\",\n  \"effective_to\": \"2026-12-31\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/brands/{{brandId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "brands", "{{brandId}}"]
+            }
+          }
+        },
+        {
+          "name": "Brands - Change Status (Inactive)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": 0,\n  \"reason\": \"Not selling anymore\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/brands/{{brandId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "brands", "{{brandId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "Brands - Change Status (Active)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/brands/{{brandId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "brands", "{{brandId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "Brands - Delete (Soft Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/brands/{{brandId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "brands", "{{brandId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "Categories - List (Active Only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/categories?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "categories"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Categories - List (Include Inactive)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/categories?include_inactive=true&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "categories"],
+              "query": [
+                { "key": "include_inactive", "value": "true" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Categories - Get By Id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/categories/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "categories", "{{categoryId}}"]
+            }
+          }
+        },
+        {
+          "name": "Categories - Create",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res && res.id) pm.environment.set('categoryId', String(res.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"CAT-001\",\n  \"name\": \"Beverages\",\n  \"description\": \"Demo category\",\n  \"effective_from\": \"2026-01-01\",\n  \"effective_to\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Categories - Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Beverages Updated\",\n  \"description\": \"Updated category\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/categories/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "categories", "{{categoryId}}"]
+            }
+          }
+        },
+        {
+          "name": "Categories - Change Status (Inactive)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": 0,\n  \"reason\": \"Season ended\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/categories/{{categoryId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "categories", "{{categoryId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "Categories - Delete (Soft Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/categories/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "categories", "{{categoryId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sub-Categories",
+      "item": [
+        {
+          "name": "Sub-Categories - List (Active Only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/sub-categories?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "sub-categories"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sub-Categories - List by Category (Active Only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/sub-categories?category_id={{categoryId}}&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "sub-categories"],
+              "query": [
+                { "key": "category_id", "value": "{{categoryId}}" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sub-Categories - List (Include Inactive)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/sub-categories?include_inactive=true&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "sub-categories"],
+              "query": [
+                { "key": "include_inactive", "value": "true" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sub-Categories - Get By Id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/sub-categories/{{subCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "sub-categories", "{{subCategoryId}}"]
+            }
+          }
+        },
+        {
+          "name": "Sub-Categories - Create",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res && res.id) pm.environment.set('subCategoryId', String(res.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SUB-001\",\n  \"category_id\": \"{{categoryId}}\",\n  \"name\": \"Soft Drinks\",\n  \"description\": \"Demo subcategory\",\n  \"effective_from\": \"2026-01-01\",\n  \"effective_to\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/sub-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "sub-categories"]
+            }
+          }
+        },
+        {
+          "name": "Sub-Categories - Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Soft Drinks Updated\",\n  \"description\": \"Updated subcategory\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/sub-categories/{{subCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "sub-categories", "{{subCategoryId}}"]
+            }
+          }
+        },
+        {
+          "name": "Sub-Categories - Change Status (Inactive)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": 0,\n  \"reason\": \"Discontinued\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/sub-categories/{{subCategoryId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "sub-categories", "{{subCategoryId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "Sub-Categories - Delete (Soft Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/product-taxonomy/sub-categories/{{subCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["master", "product-taxonomy", "sub-categories", "{{subCategoryId}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

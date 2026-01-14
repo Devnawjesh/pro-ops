@@ -1,0 +1,288 @@
+{
+  "info": {
+    "_postman_id": "8c1b7a6d-b6b1-4a47-9d70-3b0b5fd2bddd",
+    "name": "Inventory Module (GRN + Transfer + Stock)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Inventory APIs: GRN (create/list/get/update/receive/post), Transfer (create/list/get/update/dispatch/receive), Stock (list)"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "token", "value": "" },
+    { "key": "grnId", "value": "" },
+    { "key": "transferId", "value": "" },
+    { "key": "warehouseId", "value": "1" },
+    { "key": "fromWarehouseId", "value": "1" },
+    { "key": "toWarehouseId", "value": "2" },
+    { "key": "skuId", "value": "1" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "GRN",
+      "item": [
+        {
+          "name": "Create GRN (Draft)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/grns",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "grns"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grn_no\": \"GRN-0001\",\n  \"grn_date\": \"2026-01-11\",\n  \"warehouse_id\": \"{{warehouseId}}\",\n  \"supplier_name\": \"ABC Supplier\",\n  \"reference_no\": \"INV-REF-001\",\n  \"items\": [\n    {\n      \"line_no\": 1,\n      \"sku_id\": \"{{skuId}}\",\n      \"qty_expected\": \"10\",\n      \"unit_cost\": \"50.00\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "List GRN",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/inventory/grns?page=1&limit=20&q=&warehouse_id=&status=&from_date=&to_date=",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "grns"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "" },
+                { "key": "warehouse_id", "value": "" },
+                { "key": "status", "value": "" },
+                { "key": "from_date", "value": "" },
+                { "key": "to_date", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get GRN by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/inventory/grns/{{grnId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "grns", "{{grnId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update GRN (Draft)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/grns/{{grnId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "grns", "{{grnId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_name\": \"ABC Supplier Updated\",\n  \"reference_no\": \"INV-REF-001-UPD\",\n  \"items\": [\n    {\n      \"line_no\": 1,\n      \"qty_expected\": \"12\",\n      \"unit_cost\": \"52.00\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Receive GRN (Lines)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/grns/{{grnId}}/receive",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "grns", "{{grnId}}", "receive"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"received_at\": \"2026-01-11T10:00:00.000Z\",\n  \"remarks\": \"Receiving partial/complete\",\n  \"lines\": [\n    {\n      \"line_no\": 1,\n      \"qty_receive\": \"10\",\n      \"unit_cost\": \"50.00\",\n      \"batch_no\": \"BATCH-001\",\n      \"expiry_date\": \"2027-01-01\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Post GRN",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/grns/{{grnId}}/post",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "grns", "{{grnId}}", "post"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"remarks\": \"Finalize GRN\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transfer",
+      "item": [
+        {
+          "name": "Create Transfer (Draft)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "transfers"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transfer_no\": \"TR-0001\",\n  \"transfer_date\": \"2026-01-11\",\n  \"from_warehouse_id\": \"{{fromWarehouseId}}\",\n  \"to_warehouse_id\": \"{{toWarehouseId}}\",\n  \"items\": [\n    {\n      \"line_no\": 1,\n      \"sku_id\": \"{{skuId}}\",\n      \"qty_planned\": \"5\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "List Transfers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/inventory/transfers?page=1&limit=20&q=&status=&from_warehouse_id=&to_warehouse_id=&from_date=&to_date=",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "transfers"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "" },
+                { "key": "status", "value": "" },
+                { "key": "from_warehouse_id", "value": "" },
+                { "key": "to_warehouse_id", "value": "" },
+                { "key": "from_date", "value": "" },
+                { "key": "to_date", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Transfer by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/inventory/transfers/{{transferId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "transfers", "{{transferId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Transfer (Draft)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/transfers/{{transferId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "transfers", "{{transferId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"line_no\": 1,\n      \"qty_planned\": \"6\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Dispatch Transfer (FIFO lots by default)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/transfers/{{transferId}}/dispatch",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "transfers", "{{transferId}}", "dispatch"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dispatched_at\": \"2026-01-11T12:00:00.000Z\",\n  \"remarks\": \"Dispatching items\",\n  \"lines\": [\n    {\n      \"line_no\": 1,\n      \"qty_dispatch\": \"5\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Dispatch Transfer (with manual lot allocation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/transfers/{{transferId}}/dispatch",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "transfers", "{{transferId}}", "dispatch"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dispatched_at\": \"2026-01-11T12:00:00.000Z\",\n  \"remarks\": \"Dispatching items with manual lots\",\n  \"lines\": [\n    {\n      \"line_no\": 1,\n      \"qty_dispatch\": \"5\",\n      \"lot_allocations\": [\n        { \"lot_id\": \"1\", \"qty\": \"2\" },\n        { \"lot_id\": \"2\", \"qty\": \"3\" }\n      ]\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Receive Transfer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/transfers/{{transferId}}/receive",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "transfers", "{{transferId}}", "receive"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"received_at\": \"2026-01-11T15:00:00.000Z\",\n  \"remarks\": \"Receiving transfer items\",\n  \"lines\": [\n    {\n      \"line_no\": 1,\n      \"qty_receive\": \"5\",\n      \"batch_no\": \"DST-BATCH-001\",\n      \"expiry_date\": \"2027-01-01\"\n    }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stock",
+      "item": [
+        {
+          "name": "List Stock (scope-aware)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/inventory/stocks?page=1&limit=20&warehouse_id=&sku_id=&q=&only_available=1&include_zero=0&sort_by=updated_at&sort_dir=DESC",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "stocks"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "warehouse_id", "value": "" },
+                { "key": "sku_id", "value": "" },
+                { "key": "q", "value": "" },
+                { "key": "only_available", "value": "1" },
+                { "key": "include_zero", "value": "0" },
+                { "key": "sort_by", "value": "updated_at" },
+                { "key": "sort_dir", "value": "DESC" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
