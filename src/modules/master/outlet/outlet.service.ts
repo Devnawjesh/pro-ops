@@ -378,29 +378,35 @@ async list(auth: AuthUser, dto: ListOutletDto) {
 
   const today = this.ymdToday();
 
-  const qb = this.outletRepo
-    .createQueryBuilder('o')
-    .where('o.company_id=:cid', { cid: auth.company_id })
-    .andWhere('o.deleted_at IS NULL')
-
-    .leftJoin(
-      MdOutletOrg,
-      'oog',
-      `oog.company_id=o.company_id AND oog.outlet_id=o.id
-       AND oog.status = :active
-       AND oog.effective_from <= :today
-       AND (oog.effective_to IS NULL OR oog.effective_to >= :today)`,
-      { today, active: Status.ACTIVE },
-    )
-    .leftJoin(
-      MdOutletDistributor,
-      'od',
-      `od.company_id=o.company_id AND od.outlet_id=o.id
-       AND od.status = :active
-       AND od.effective_from <= :today
-       AND (od.effective_to IS NULL OR od.effective_to >= :today)`,
-      { today, active: Status.ACTIVE },
-    );
+const qb = this.outletRepo
+  .createQueryBuilder('o')
+  .where('o.company_id=:cid', { cid: auth.company_id })
+  .andWhere('o.deleted_at IS NULL')
+  .leftJoin(
+    MdOutletOrg,
+    'oog',
+    `oog.company_id=o.company_id AND oog.outlet_id=o.id
+     AND oog.status = :active
+     AND oog.effective_from <= :today
+     AND (oog.effective_to IS NULL OR oog.effective_to >= :today)`,
+    { today, active: Status.ACTIVE },
+  )
+  .leftJoin(
+    MdOutletDistributor,
+    'od',
+    `od.company_id=o.company_id AND od.outlet_id=o.id
+     AND od.status = :active
+     AND od.effective_from <= :today
+     AND (od.effective_to IS NULL OR od.effective_to >= :today)`,
+    { today, active: Status.ACTIVE },
+  )
+  .leftJoin(
+    MdDistributor,
+    'd',
+    `d.company_id = o.company_id
+     AND d.id = od.distributor_id
+     AND d.deleted_at IS NULL`,
+  );
 
   if (dto.status !== undefined) qb.andWhere('o.status = :st', { st: dto.status });
   if (dto.outlet_type !== undefined) qb.andWhere('o.outlet_type = :ot', { ot: dto.outlet_type });
@@ -428,6 +434,7 @@ async list(auth: AuthUser, dto: ListOutletDto) {
       'o.id AS id',
       'o.code AS code',
       'o.name AS name',
+      'o.address AS address',
       'o.outlet_type AS outlet_type',
       'o.mobile AS mobile',
       'o.status AS status',
