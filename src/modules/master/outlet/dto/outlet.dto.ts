@@ -106,8 +106,7 @@ export class ListOutletDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
-  page?: number;
+  status?: number;
 
   @IsOptional()
   @Type(() => Number)

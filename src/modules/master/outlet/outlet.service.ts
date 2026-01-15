@@ -422,26 +422,28 @@ const qb = this.outletRepo
 
   if (dto.org_node_id) qb.andWhere('oog.org_node_id = :on', { on: dto.org_node_id });
   if (dto.distributor_id) qb.andWhere('od.distributor_id = :did', { did: dto.distributor_id });
-
   this.applyAccessFilter(qb, scope);
 
   const rows = await qb
-    .clone()
-    .orderBy('o.id', 'DESC')
-    .skip(skip)
-    .take(limit)
-    .select([
-      'o.id AS id',
-      'o.code AS code',
-      'o.name AS name',
-      'o.address AS address',
-      'o.outlet_type AS outlet_type',
-      'o.mobile AS mobile',
-      'o.status AS status',
-      'oog.org_node_id AS org_node_id',
-      'od.distributor_id AS distributor_id',
-    ])
-    .getRawMany();
+  .clone()
+  .orderBy('o.id', 'DESC')
+  .skip(skip)
+  .take(limit)
+  .select([
+    'o.id AS id',
+    'o.code AS code',
+    'o.name AS name',
+    'o.address AS address',
+    'o.outlet_type AS outlet_type',
+    'o.mobile AS mobile',
+    'o.status AS status',
+    'oog.org_node_id AS org_node_id',
+    'od.distributor_id AS distributor_id',
+    'd.code AS distributor_code',
+    'd.name AS distributor_name',
+  ])
+  .getRawMany();
+
 
   const total = await qb.clone().getCount();
 
