@@ -316,7 +316,7 @@ private applyAccessFilter(
     return await this.outletRepo.save(row);
   }
 
-  async findOne(auth: AuthUser, id: string) {
+async findOne(auth: AuthUser, id: string) {
   const scope = await this.resolveAccessScope(auth);
   const today = this.ymdToday();
 
@@ -343,6 +343,13 @@ private applyAccessFilter(
        AND od.effective_from <= :today
        AND (od.effective_to IS NULL OR od.effective_to >= :today)`,
       { today, active: Status.ACTIVE },
+    )
+    .leftJoin(
+      MdDistributor,
+      'd',
+      `d.company_id = o.company_id
+       AND d.id = od.distributor_id
+       AND d.deleted_at IS NULL`,
     );
 
   this.applyAccessFilter(qb, scope);
@@ -361,14 +368,19 @@ private applyAccessFilter(
       'o.status AS status',
       'o.effective_from AS effective_from',
       'o.effective_to AS effective_to',
+
       'oog.org_node_id AS org_node_id',
       'od.distributor_id AS distributor_id',
+
+      'd.code AS distributor_code',
+      'd.name AS distributor_name',
     ])
     .getRawOne();
 
   if (!raw) throw new NotFoundException('Outlet not found (or not permitted)');
   return raw;
 }
+
 
 async list(auth: AuthUser, dto: ListOutletDto) {
   const scope = await this.resolveAccessScope(auth);
@@ -449,7 +461,6 @@ const qb = this.outletRepo
 
   return { page, limit, total, rows };
 }
-
 
   /** ---------------------------
    * Mapping helper: close overlap and insert new
