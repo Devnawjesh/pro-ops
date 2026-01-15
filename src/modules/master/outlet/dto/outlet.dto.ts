@@ -111,30 +111,33 @@ export class ListOutletDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
+  outlet_type?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  org_node_id?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  distributor_id?: number;
 
   @IsOptional()
   @IsString()
   q?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
-  outlet_type?: number;
+  @Min(1)
+  page?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
-  status?: number;
-
-  // filter by “current” mapping
-  @IsOptional()
-  @IsString()
-  distributor_id?: string;
-
-  @IsOptional()
-  @IsString()
-  org_node_id?: string;
+  @Min(1)
+  limit?: number;
 }
 
 export class MapOutletOrgDto {
