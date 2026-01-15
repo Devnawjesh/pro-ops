@@ -127,11 +127,15 @@ export class OutletService {
     }
   }
 
-  return {
-    isAdmin: false,
-    allowedOrgNodeIds: [...orgNodeIds],
-    allowedDistributorIds: [...distributorIds],
-  };
+  const expandedTerritoryIds =
+  orgNodeIds.size ? await this.expandOrgScopeToTerritories(auth.company_id, [...orgNodeIds]) : [];
+
+return {
+  isAdmin: false,
+  allowedOrgNodeIds: expandedTerritoryIds,
+  allowedDistributorIds: [...distributorIds],
+};
+
 }
 
 private applyAccessFilter(
@@ -853,6 +857,37 @@ private excelDateToYmd(v: any): string | null {
   if (!isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
 
   return null;
+}
+private async expandOrgScopeToTerritories(
+  companyId: string,
+  orgNodeIds: string[],
+): Promise<string[]> {
+  if (!orgNodeIds?.length) return [];
+
+  // Recursive CTE: from given nodes → all descendants → pick only level_no=5
+  const rows = await this.orgRepo.query(
+    `
+    WITH RECURSIVE tree AS (
+      SELECT id, level_no
+      FROM md_org_hierarchy
+      WHERE company_id = $1
+        AND deleted_at IS NULL
+        AND id = ANY($2::bigint[])
+      UNION ALL
+      SELECT c.id, c.level_no
+      FROM md_org_hierarchy c
+      JOIN tree p ON p.id = c.parent_id
+      WHERE c.company_id = $1
+        AND c.deleted_at IS NULL
+    )
+    SELECT DISTINCT id
+    FROM tree
+    WHERE level_no = 5
+    `,
+    [companyId, orgNodeIds.map((x) => Number(x))],
+  );
+
+  return rows.map((r: any) => String(r.id));
 }
 
 }
