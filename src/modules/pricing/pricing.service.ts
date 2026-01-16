@@ -17,6 +17,8 @@ import { SchemeRule } from './entities/scheme-rule.entity';
 import { MdSku } from '../master/entities/md_sku.entity';
 import { MdDistributor } from '../distributors/entities/distributor.entity';
 
+import { UserScope } from '../users/entities/user-scope.entity';
+
 import { ListPriceListDto } from './dto/price-list/list-price-list.dto';
 import { CreatePriceListDto } from './dto/price-list/create-price-list.dto';
 import { UpdatePriceListDto } from './dto/price-list/update-price-list.dto';
@@ -30,8 +32,7 @@ import { BulkImportSchemeDto } from './dto/schema/bulk-import-scheme.dto';
 import { ResolvePriceDto } from './dto/resolve-price.dto';
 import { ApplySchemeDto } from './dto/apply-scheme.dto';
 
-import { Status } from '../../common/constants/enums';
-
+import { UserType, ScopeType, Status } from '../../common/constants/enums';
 import {
   cellDateISO,
   cellNum,
@@ -45,14 +46,23 @@ import {
   normalizeName,
   rangesOverlap,
 } from './utils/pricing-rules.util';
+
 import { UpdateSchemeRuleDto } from './dto/schema/update-scheme-rule.dto';
 import { CreateSchemeRuleDto } from './dto/schema/create-scheme-rule.dto';
 
 type AuthUser = {
   company_id: string;
   user_id?: string;
+  id?: string;
   sub?: string;
   user_type?: number;
+};
+
+type ResolvedContext = {
+  date: string;
+  distributor_id: string | null;
+  org_node_id: string | null;
+  outlet_type: number | null;
 };
 
 @Injectable()
@@ -76,11 +86,15 @@ export class PricingService {
     private readonly skuRepo: Repository<MdSku>,
     @InjectRepository(MdDistributor)
     private readonly distRepo: Repository<MdDistributor>,
+
+    // ✅ add this
+    @InjectRepository(UserScope)
+    private readonly userScopeRepo: Repository<UserScope>,
   ) {}
 
   // ---------------- helpers ----------------
 
-    private actorId(auth: any) {
+  private actorId(auth: any) {
     return auth.user_id ?? auth.id ?? auth.sub ?? null;
   }
 
@@ -90,6 +104,14 @@ export class PricingService {
     }
   }
 
+  private ymdToday() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   private dateInRange(date: string, from?: string | null, to?: string | null) {
     const a = from ?? '0000-01-01';
     const b = to ?? '9999-12-31';
@@ -97,9 +119,9 @@ export class PricingService {
   }
 
   private scoreScope(params: {
-    distributor_id?: string;
-    outlet_type?: number;
-    org_node_id?: string;
+    distributor_id?: string | null;
+    outlet_type?: number | null;
+    org_node_id?: string | null;
     scope_distributor_id?: string | null;
     scope_outlet_type?: number | null;
     scope_org_node_id?: string | null;
@@ -111,19 +133,23 @@ export class PricingService {
       params.scope_distributor_id === params.distributor_id
     )
       score += 100;
+
     if (
       params.scope_org_node_id &&
       params.org_node_id &&
       params.scope_org_node_id === params.org_node_id
     )
       score += 50;
+
     if (
       params.scope_outlet_type !== null &&
       params.scope_outlet_type !== undefined &&
+      params.outlet_type !== null &&
       params.outlet_type !== undefined &&
       params.scope_outlet_type === params.outlet_type
     )
       score += 10;
+
     return score;
   }
 
@@ -1053,30 +1079,6 @@ export class PricingService {
         },
     };
   }
-
-  async resolveBestPriceBulk(
-    auth: AuthUser,
-    dto: {
-      date: string;
-      context: { distributor_id?: string; outlet_type?: number; org_node_id?: string };
-      skus: Array<{ sku_id?: string; sku_code?: string }>;
-    },
-  ) {
-    const out: any[] = [];
-    for (const s of dto.skus) {
-      const res = await this.resolveBestPrice(auth, {
-        date: dto.date,
-        distributor_id: dto.context?.distributor_id,
-        outlet_type: dto.context?.outlet_type,
-        org_node_id: dto.context?.org_node_id,
-        sku_id: s.sku_id,
-        sku_code: s.sku_code,
-      } as any);
-      out.push(res.data);
-    }
-    return out;
-  }
-
   // ---------------- Apply Schemes ----------------
 
   async applySchemesToOrder(auth: AuthUser, dto: ApplySchemeDto) {
@@ -1524,5 +1526,324 @@ async softDeleteSchemeRule(auth: AuthUser, schemeId: string, ruleId: string) {
   await this.ruleRepo.save(rule);
   return { id: rule.id };
 }
+/**
+   * ✅ Resolve pricing context for "different user types"
+   * Priority:
+   * 1) dto overrides (query/body)
+   * 2) md_user_scope (default for that user)
+   */
+  private async resolveContext(auth: AuthUser, dto: any): Promise<ResolvedContext> {
+    const date = dto?.date ? String(dto.date) : this.ymdToday();
+    this.assertISODate(date);
 
+    const dtoDistributor = dto?.distributor_id ? String(dto.distributor_id) : null;
+    const dtoOrg = dto?.org_node_id ? String(dto.org_node_id) : null;
+    const dtoOutletType =
+      dto?.outlet_type === 0 || dto?.outlet_type ? Number(dto.outlet_type) : null;
+
+    const uid = this.actorId(auth);
+    if (!uid) {
+      return { date, distributor_id: dtoDistributor, org_node_id: dtoOrg, outlet_type: dtoOutletType };
+    }
+
+    const scopes = await this.userScopeRepo.find({
+      where: { company_id: auth.company_id as any, user_id: uid as any } as any,
+      order: { id: 'DESC' as any },
+      take: 200,
+    });
+
+    const distScope = scopes.find((s) => Number(s.scope_type) === ScopeType.DISTRIBUTOR);
+    const hierScope = scopes.find((s) => Number(s.scope_type) === ScopeType.HIERARCHY);
+
+    const fallbackDistributor =
+      distScope?.distributor_id ?? scopes.find((s) => !!s.distributor_id)?.distributor_id ?? null;
+
+    const fallbackOrg =
+      hierScope?.org_node_id ?? scopes.find((s) => !!s.org_node_id)?.org_node_id ?? null;
+
+    // Distributor user: prefer forced distributor scope
+    const isDistUser =
+      Number(auth.user_type) === UserType.DISTRIBUTOR_USER ||
+      Number(auth.user_type) === UserType.SUB_DISTRIBUTOR_USER;
+
+    const distributor_id = dtoDistributor ?? (isDistUser ? fallbackDistributor : fallbackDistributor);
+    const org_node_id = dtoOrg ?? fallbackOrg;
+
+    return { date, distributor_id: distributor_id ?? null, org_node_id: org_node_id ?? null, outlet_type: dtoOutletType };
+  }
+
+  // ============================================================
+  // ✅ VISIBLE SKU LIST (SKU + Best Price)
+  // ============================================================
+  async listVisibleSkusWithBestPrice(auth: AuthUser, dto: any) {
+    const ctx = await this.resolveContext(auth, dto);
+
+    const page = Number(dto?.page ?? 1);
+    const limit = Math.min(200, Math.max(1, Number(dto?.limit ?? 50)));
+    const offset = (page - 1) * limit;
+    const q = dto?.q ? String(dto.q).trim() : '';
+
+    const sql = `
+WITH candidates AS (
+  SELECT
+    sku.id AS sku_id,
+    sku.code AS sku_code,
+    sku.name AS sku_name,
+
+    pl.id AS price_list_id,
+    pl.code AS price_list_code,
+    pl.name AS price_list_name,
+    pl.price_list_type AS price_list_type,
+
+    i.id AS item_id,
+    i.mrp AS mrp,
+    i.tp AS tp,
+    i.dp AS dp,
+    i.vat_rate AS vat_rate,
+    i.effective_from AS item_effective_from,
+
+    s.id AS scope_id,
+    s.distributor_id AS scope_distributor_id,
+    s.org_node_id AS scope_org_node_id,
+    s.outlet_type AS scope_outlet_type,
+    s.effective_from AS scope_effective_from,
+
+    (CASE WHEN s.distributor_id IS NOT NULL AND s.distributor_id::text = COALESCE($2,'') THEN 100 ELSE 0 END) +
+    (CASE WHEN s.org_node_id IS NOT NULL AND s.org_node_id::text = COALESCE($3,'') THEN 50 ELSE 0 END) +
+    (CASE WHEN s.outlet_type IS NOT NULL AND s.outlet_type = $4 THEN 10 ELSE 0 END)
+    AS score
+  FROM md_sku sku
+
+  JOIN md_price_list_item i
+    ON i.company_id = sku.company_id
+   AND i.sku_id = sku.id
+   AND i.deleted_at IS NULL
+   AND i.status = 1
+   AND (i.effective_from IS NULL OR i.effective_from <= $1::date)
+   AND (i.effective_to IS NULL OR i.effective_to >= $1::date)
+
+  JOIN md_price_list pl
+    ON pl.company_id = sku.company_id
+   AND pl.id = i.price_list_id
+   AND pl.deleted_at IS NULL
+   AND pl.status = 1
+   AND (pl.effective_from IS NULL OR pl.effective_from <= $1::date)
+   AND (pl.effective_to IS NULL OR pl.effective_to >= $1::date)
+
+  LEFT JOIN md_price_list_scope s
+    ON s.company_id = pl.company_id
+   AND s.price_list_id = pl.id
+   AND s.deleted_at IS NULL
+   AND s.status = 1
+   AND (s.effective_from IS NULL OR s.effective_from <= $1::date)
+   AND (s.effective_to IS NULL OR s.effective_to >= $1::date)
+
+  WHERE sku.company_id = $5
+    AND sku.deleted_at IS NULL
+    AND sku.status = 1
+    AND ($6 = '' OR sku.code ILIKE '%'||$6||'%' OR sku.name ILIKE '%'||$6||'%')
+    AND (
+      -- DEFAULT list always allowed
+      pl.price_list_type = 1
+      OR (
+        -- scoped lists require a scope row that matches context
+        s.id IS NOT NULL
+        AND (s.distributor_id IS NULL OR s.distributor_id::text = COALESCE($2,''))
+        AND (s.org_node_id IS NULL OR s.org_node_id::text = COALESCE($3,''))
+        AND (s.outlet_type IS NULL OR s.outlet_type = $4)
+      )
+    )
+),
+best AS (
+  SELECT DISTINCT ON (sku_id)
+    *
+  FROM candidates
+  ORDER BY
+    sku_id,
+    score DESC,
+    COALESCE(scope_effective_from, DATE '0001-01-01') DESC,
+    COALESCE(item_effective_from, DATE '0001-01-01') DESC,
+    price_list_id DESC
+)
+SELECT
+  sku_id, sku_code, sku_name,
+  price_list_id, price_list_code, price_list_name, price_list_type,
+  item_id, mrp, tp, dp, vat_rate,
+  scope_id, scope_distributor_id, scope_org_node_id, scope_outlet_type
+FROM best
+ORDER BY sku_code ASC
+LIMIT $7 OFFSET $8
+`;
+
+    const rows = await this.ds.query(sql, [
+      ctx.date,           // $1
+      ctx.distributor_id, // $2
+      ctx.org_node_id,    // $3
+      ctx.outlet_type,    // $4
+      auth.company_id,    // $5
+      q,                  // $6
+      limit,              // $7
+      offset,             // $8
+    ]);
+
+    const countSql = `
+WITH candidates AS (
+  SELECT sku.id AS sku_id,
+    (CASE WHEN s.distributor_id IS NOT NULL AND s.distributor_id::text = COALESCE($2,'') THEN 100 ELSE 0 END) +
+    (CASE WHEN s.org_node_id IS NOT NULL AND s.org_node_id::text = COALESCE($3,'') THEN 50 ELSE 0 END) +
+    (CASE WHEN s.outlet_type IS NOT NULL AND s.outlet_type = $4 THEN 10 ELSE 0 END) AS score,
+    s.effective_from AS scope_effective_from,
+    i.effective_from AS item_effective_from,
+    pl.id AS price_list_id
+  FROM md_sku sku
+  JOIN md_price_list_item i
+    ON i.company_id = sku.company_id
+   AND i.sku_id = sku.id
+   AND i.deleted_at IS NULL
+   AND i.status = 1
+   AND (i.effective_from IS NULL OR i.effective_from <= $1::date)
+   AND (i.effective_to IS NULL OR i.effective_to >= $1::date)
+  JOIN md_price_list pl
+    ON pl.company_id = sku.company_id
+   AND pl.id = i.price_list_id
+   AND pl.deleted_at IS NULL
+   AND pl.status = 1
+   AND (pl.effective_from IS NULL OR pl.effective_from <= $1::date)
+   AND (pl.effective_to IS NULL OR pl.effective_to >= $1::date)
+  LEFT JOIN md_price_list_scope s
+    ON s.company_id = pl.company_id
+   AND s.price_list_id = pl.id
+   AND s.deleted_at IS NULL
+   AND s.status = 1
+   AND (s.effective_from IS NULL OR s.effective_from <= $1::date)
+   AND (s.effective_to IS NULL OR s.effective_to >= $1::date)
+  WHERE sku.company_id = $5
+    AND sku.deleted_at IS NULL
+    AND sku.status = 1
+    AND ($6 = '' OR sku.code ILIKE '%'||$6||'%' OR sku.name ILIKE '%'||$6||'%')
+    AND (
+      pl.price_list_type = 1
+      OR (
+        s.id IS NOT NULL
+        AND (s.distributor_id IS NULL OR s.distributor_id::text = COALESCE($2,''))
+        AND (s.org_node_id IS NULL OR s.org_node_id::text = COALESCE($3,''))
+        AND (s.outlet_type IS NULL OR s.outlet_type = $4)
+      )
+    )
+),
+best AS (
+  SELECT DISTINCT ON (sku_id) sku_id
+  FROM candidates
+  ORDER BY sku_id, score DESC,
+    COALESCE(scope_effective_from, DATE '0001-01-01') DESC,
+    COALESCE(item_effective_from, DATE '0001-01-01') DESC,
+    price_list_id DESC
+)
+SELECT COUNT(*)::int AS total FROM best
+`;
+
+    const totalRes = await this.ds.query(countSql, [
+      ctx.date,
+      ctx.distributor_id,
+      ctx.org_node_id,
+      ctx.outlet_type,
+      auth.company_id,
+      q,
+    ]);
+    const total = totalRes?.[0]?.total ?? 0;
+
+    return { page, limit, total, context_used: ctx, rows };
+  }
+
+  // ============================================================
+  // ✅ VISIBLE SCHEMES
+  // ============================================================
+  async listVisibleSchemes(auth: AuthUser, dto: any) {
+    const ctx = await this.resolveContext(auth, dto);
+
+    const page = Number(dto?.page ?? 1);
+    const limit = Math.min(200, Math.max(1, Number(dto?.limit ?? 50)));
+    const offset = (page - 1) * limit;
+    const q = dto?.q ? String(dto.q).trim() : '';
+
+    const sql = `
+SELECT
+  s.id, s.code, s.name,
+  s.scheme_type, s.priority, s.can_stack,
+  s.distributor_id, s.org_node_id, s.outlet_type,
+  s.effective_from, s.effective_to, s.status
+FROM md_scheme s
+WHERE s.company_id = $1
+  AND s.deleted_at IS NULL
+  AND s.status = 1
+  AND (s.effective_from IS NULL OR s.effective_from <= $2::date)
+  AND (s.effective_to IS NULL OR s.effective_to >= $2::date)
+  AND (s.distributor_id IS NULL OR s.distributor_id::text = COALESCE($3,''))
+  AND (s.org_node_id IS NULL OR s.org_node_id::text = COALESCE($4,''))
+  AND (s.outlet_type IS NULL OR s.outlet_type = $5)
+  AND ($6 = '' OR s.code ILIKE '%'||$6||'%' OR s.name ILIKE '%'||$6||'%')
+ORDER BY s.priority DESC, s.id DESC
+LIMIT $7 OFFSET $8
+`;
+
+    const rows = await this.ds.query(sql, [
+      auth.company_id,
+      ctx.date,
+      ctx.distributor_id,
+      ctx.org_node_id,
+      ctx.outlet_type,
+      q,
+      limit,
+      offset,
+    ]);
+
+    const totalRes = await this.ds.query(
+      `
+SELECT COUNT(*)::int AS total
+FROM md_scheme s
+WHERE s.company_id = $1
+  AND s.deleted_at IS NULL
+  AND s.status = 1
+  AND (s.effective_from IS NULL OR s.effective_from <= $2::date)
+  AND (s.effective_to IS NULL OR s.effective_to >= $2::date)
+  AND (s.distributor_id IS NULL OR s.distributor_id::text = COALESCE($3,''))
+  AND (s.org_node_id IS NULL OR s.org_node_id::text = COALESCE($4,''))
+  AND (s.outlet_type IS NULL OR s.outlet_type = $5)
+  AND ($6 = '' OR s.code ILIKE '%'||$6||'%' OR s.name ILIKE '%'||$6||'%')
+`,
+      [auth.company_id, ctx.date, ctx.distributor_id, ctx.org_node_id, ctx.outlet_type, q],
+    );
+
+    const total = totalRes?.[0]?.total ?? 0;
+    return { page, limit, total, context_used: ctx, rows };
+  }
+
+  // ============================================================
+  // ✅ IMPORTANT BUG FIX (your current code)
+  // resolveBestPriceBulk() was pushing res.data but resolveBestPrice returns object directly.
+  // ============================================================
+  async resolveBestPriceBulk(
+    auth: AuthUser,
+    dto: {
+      date: string;
+      context: { distributor_id?: string; outlet_type?: number; org_node_id?: string };
+      skus: Array<{ sku_id?: string; sku_code?: string }>;
+    },
+  ) {
+    const out: any[] = [];
+    for (const s of dto.skus) {
+      const res = await this.resolveBestPrice(auth, {
+        date: dto.date,
+        distributor_id: dto.context?.distributor_id,
+        outlet_type: dto.context?.outlet_type,
+        org_node_id: dto.context?.org_node_id,
+        sku_id: s.sku_id,
+        sku_code: s.sku_code,
+      } as any);
+
+      // ✅ FIX:
+      out.push(res);
+    }
+    return out;
+  }
 }

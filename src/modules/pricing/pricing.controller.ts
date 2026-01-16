@@ -37,6 +37,7 @@ import { ResolvePriceDto } from './dto/resolve-price.dto';
 import { ApplySchemeDto } from './dto/apply-scheme.dto';
 import { CreateSchemeRuleDto } from './dto/schema/create-scheme-rule.dto';
 import { UpdateSchemeRuleDto } from './dto/schema/update-scheme-rule.dto';
+import { ListVisibleDto } from './dto/list-visible.dto';
 
 @Controller('pricing')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -148,7 +149,17 @@ createPriceListScope(@Req() req: any, @Param('id') id: string, @Body() dto: any)
   ) {
     return this.service.resolveBestPriceBulk(req.user, dto);
   }
+@Get('visible-skus')
+@Permissions('md_price_list.view')
+visibleSkus(@Req() req: any, @Query() dto: ListVisibleDto) {
+  return this.service.listVisibleSkusWithBestPrice(req.user, dto);
+}
 
+@Get('visible-schemes')
+@Permissions('md_scheme.view')
+visibleSchemes(@Req() req: any, @Query() dto: ListVisibleDto) {
+  return this.service.listVisibleSchemes(req.user, dto);
+}
   // ---------------- Scheme ----------------
 
   @Post('schemes')
@@ -243,4 +254,6 @@ deleteSchemeRule(@Req() req: any, @Param('id') id: string, @Param('ruleId') rule
   applySchemes(@Req() req: any, @Body() dto: ApplySchemeDto) {
     return this.service.applySchemesToOrder(req.user, dto);
   }
+  
+
 }
