@@ -173,6 +173,13 @@ visibleSchemes(@Req() req: any, @Query() dto: ListVisibleDto) {
   listSchemes(@Req() req: any, @Query() dto: ListSchemeDto) {
     return this.service.listSchemes(req.user, dto);
   }
+  // Flat visible scheme rules (with joins)
+@Get('visible-scheme-rules')
+@Permissions('md_scheme.view')
+visibleSchemeRules(@Req() req: any, @Query() dto: any) {
+  return this.service.listVisibleSchemeRules(req.user, dto);
+}
+
 @Post('schemes/:id/rules')
 @Permissions('md_scheme.update')
 createSchemeRule(@Req() req: any, @Param('id') id: string, @Body() dto: CreateSchemeRuleDto) {

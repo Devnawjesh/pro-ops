@@ -153,7 +153,20 @@ export class PricingService {
     return score;
   }
 
+private resolveContextFromQuery(dto: any): ResolvedContext {
+  const date = dto?.date ? String(dto.date) : this.ymdToday();
+  this.assertISODate(date);
 
+  const distributor_id = dto?.distributor_id ? String(dto.distributor_id) : null;
+  const org_node_id = dto?.org_node_id ? String(dto.org_node_id) : null;
+
+  const outlet_type =
+    dto?.outlet_type === 0 || dto?.outlet_type
+      ? Number(dto.outlet_type)
+      : null;
+
+  return { date, distributor_id, org_node_id, outlet_type };
+}
   // ---------------- PriceList CRUD ----------------
 
   async createPriceList(auth: AuthUser, dto: CreatePriceListDto) {
@@ -1846,4 +1859,128 @@ WHERE s.company_id = $1
     }
     return out;
   }
+
+  async listVisibleSchemeRules(auth: AuthUser, dto: any) {
+  const ctx = this.resolveContextFromQuery(dto);
+
+  const page = Number(dto?.page ?? 1);
+  const limit = Math.min(200, Math.max(1, Number(dto?.limit ?? 50)));
+  const offset = (page - 1) * limit;
+  const q = dto?.q ? String(dto.q).trim() : '';
+
+  const sql = `
+SELECT
+  r.id,
+  r.scheme_id,
+  s.code AS scheme_code,
+
+  r.buy_sku_id,
+  bsku.code AS buy_sku_code,
+  bsku.name AS buy_sku_name,
+
+  r.min_qty,
+  r.min_amount,
+
+  r.free_sku_id,
+  fsku.code AS free_sku_code,
+  fsku.name AS free_sku_name,
+
+  r.free_qty,
+  r.discount_percent,
+  r.discount_amount,
+
+  r.sort_order
+FROM md_scheme_rule r
+JOIN md_scheme s
+  ON s.company_id = r.company_id
+ AND s.id = r.scheme_id
+ AND s.deleted_at IS NULL
+ AND s.status = 1
+ AND (s.effective_from IS NULL OR s.effective_from <= $2::date)
+ AND (s.effective_to IS NULL OR s.effective_to >= $2::date)
+ AND (s.distributor_id IS NULL OR s.distributor_id::text = COALESCE($3,''))
+ AND (s.org_node_id IS NULL OR s.org_node_id::text = COALESCE($4,''))
+ AND (s.outlet_type IS NULL OR s.outlet_type = $5)
+
+LEFT JOIN md_sku bsku
+  ON bsku.company_id = r.company_id
+ AND bsku.id = r.buy_sku_id
+ AND bsku.deleted_at IS NULL
+
+LEFT JOIN md_sku fsku
+  ON fsku.company_id = r.company_id
+ AND fsku.id = r.free_sku_id
+ AND fsku.deleted_at IS NULL
+
+WHERE r.company_id = $1
+  AND r.deleted_at IS NULL
+  AND (
+    $6 = ''
+    OR s.code ILIKE '%'||$6||'%'
+    OR bsku.code ILIKE '%'||$6||'%'
+    OR bsku.name ILIKE '%'||$6||'%'
+    OR fsku.code ILIKE '%'||$6||'%'
+    OR fsku.name ILIKE '%'||$6||'%'
+  )
+ORDER BY s.priority DESC, s.id DESC, r.sort_order ASC, r.id ASC
+LIMIT $7 OFFSET $8
+`;
+
+  const rows = await this.ds.query(sql, [
+    auth.company_id,
+    ctx.date,
+    ctx.distributor_id,
+    ctx.org_node_id,
+    ctx.outlet_type,
+    q,
+    limit,
+    offset,
+  ]);
+
+  const countSql = `
+SELECT COUNT(*)::int AS total
+FROM md_scheme_rule r
+JOIN md_scheme s
+  ON s.company_id = r.company_id
+ AND s.id = r.scheme_id
+ AND s.deleted_at IS NULL
+ AND s.status = 1
+ AND (s.effective_from IS NULL OR s.effective_from <= $2::date)
+ AND (s.effective_to IS NULL OR s.effective_to >= $2::date)
+ AND (s.distributor_id IS NULL OR s.distributor_id::text = COALESCE($3,''))
+ AND (s.org_node_id IS NULL OR s.org_node_id::text = COALESCE($4,''))
+ AND (s.outlet_type IS NULL OR s.outlet_type = $5)
+LEFT JOIN md_sku bsku
+  ON bsku.company_id = r.company_id
+ AND bsku.id = r.buy_sku_id
+ AND bsku.deleted_at IS NULL
+LEFT JOIN md_sku fsku
+  ON fsku.company_id = r.company_id
+ AND fsku.id = r.free_sku_id
+ AND fsku.deleted_at IS NULL
+WHERE r.company_id = $1
+  AND r.deleted_at IS NULL
+  AND (
+    $6 = ''
+    OR s.code ILIKE '%'||$6||'%'
+    OR bsku.code ILIKE '%'||$6||'%'
+    OR bsku.name ILIKE '%'||$6||'%'
+    OR fsku.code ILIKE '%'||$6||'%'
+    OR fsku.name ILIKE '%'||$6||'%'
+  )
+`;
+
+  const totalRes = await this.ds.query(countSql, [
+    auth.company_id,
+    ctx.date,
+    ctx.distributor_id,
+    ctx.org_node_id,
+    ctx.outlet_type,
+    q,
+  ]);
+  const total = totalRes?.[0]?.total ?? 0;
+
+  return { page, limit, total, context_used: ctx, rows };
+}
+
 }
