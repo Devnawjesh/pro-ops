@@ -12,6 +12,7 @@ import { SchemeRule } from './entities/scheme-rule.entity';
 
 import { MdSku } from '../master/entities/md_sku.entity';
 import { MdDistributor } from '../distributors/entities/distributor.entity';
+import { UserScope } from '../users/entities/user-scope.entity';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { MdDistributor } from '../distributors/entities/distributor.entity';
       SchemeRule,
       MdSku,
       MdDistributor,
+      UserScope
     ]),
   ],
   controllers: [PricingController],
