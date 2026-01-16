@@ -63,7 +63,7 @@ export class UsersAdminService {
     const org = s.org_node_id ?? null;
     const route = s.route_id ?? null;
     const dist = s.distributor_id ?? null;
-
+    console.log(org);
     const hasOrg = !!org;
     const hasRoute = !!route;
     const hasDist = !!dist;
