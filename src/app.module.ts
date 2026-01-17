@@ -49,7 +49,7 @@ import { SalesModule } from './modules/sales/sales.module';
   OutletModule,
   PricingModule,
   InventoryModule,
-  SalesModule
+  SalesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
