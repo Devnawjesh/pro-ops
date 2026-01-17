@@ -265,6 +265,99 @@ private getDistributorIdFromAuth(auth: AuthUser): string {
 
   return fromScope != null ? String(fromScope) : '';
 }
+async resolveInventoryWarehouseScope(auth: AuthUser): Promise<{
+  isAdmin: boolean;
+  allowedWarehouseIds: string[];
+}> {
+  const userId = this.actorId(auth);
+  if (!userId) return { isAdmin: false, allowedWarehouseIds: [] };
+
+  const companyId = String(auth.company_id);
+
+  // ✅ 1) EMPLOYEE + GLOBAL => all warehouses
+  if (Number(auth.user_type) === UserType.EMPLOYEE && this.hasGlobalScope(auth)) {
+    const rows = await this.whRepo
+      .createQueryBuilder('w')
+      .select(['w.id AS id'])
+      .where('w.company_id=:cid', { cid: companyId })
+      .andWhere('w.deleted_at IS NULL')
+      .getRawMany();
+
+    return { isAdmin: true, allowedWarehouseIds: rows.map((r: any) => String(r.id)) };
+  }
+
+  // ✅ 2) Distributor user => only his distributor warehouses (do not rely on md_user_scope)
+  if (Number(auth.user_type) === UserType.DISTRIBUTOR_USER) {
+    const distId = this.getDistId(auth);
+    if (!distId) return { isAdmin: false, allowedWarehouseIds: [] };
+
+    const rows = await this.whRepo
+      .createQueryBuilder('w')
+      .select(['w.id AS id'])
+      .where('w.company_id=:cid', { cid: companyId })
+      .andWhere('w.deleted_at IS NULL')
+      .andWhere('w.owner_type=:ot AND w.owner_id=:oid', {
+        ot: WarehouseOwnerType.DISTRIBUTOR,
+        oid: distId,
+      })
+      .getRawMany();
+
+    return { isAdmin: false, allowedWarehouseIds: rows.map((r: any) => String(r.id)) };
+  }
+
+  // ✅ 3) Sub-distributor user => only his sub-distributor warehouses
+  if (Number(auth.user_type) === UserType.SUB_DISTRIBUTOR_USER) {
+    const subId = this.getSubDistId(auth); // your public wrapper
+    if (!subId) return { isAdmin: false, allowedWarehouseIds: [] };
+
+    const rows = await this.whRepo
+      .createQueryBuilder('w')
+      .select(['w.id AS id'])
+      .where('w.company_id=:cid', { cid: companyId })
+      .andWhere('w.deleted_at IS NULL')
+      .andWhere('w.owner_type=:ot AND w.owner_id=:oid', {
+        ot: WarehouseOwnerType.SUB_DISTRIBUTOR,
+        oid: subId,
+      })
+      .getRawMany();
+
+    return { isAdmin: false, allowedWarehouseIds: rows.map((r: any) => String(r.id)) };
+  }
+
+  // ✅ 4) ORG USERS (Rep/FLM/SLM/RSM etc)
+  // Must have DISTRIBUTOR scopes in md_user_scope, otherwise NO inventory access.
+  const scopes = await this.dataSource.query(
+    `select scope_type, distributor_id
+     from md_user_scope
+     where company_id=$1 and user_id=$2 and status=1 and deleted_at is null`,
+    [companyId, userId],
+  );
+
+  const distributorIds = Array.from(
+    new Set(
+      (scopes ?? [])
+        .filter((s: any) => Number(s.scope_type) === ScopeType.DISTRIBUTOR && s.distributor_id)
+        .map((s: any) => String(s.distributor_id)),
+    ),
+  );
+
+  if (!distributorIds.length) {
+    // ✅ critical: do not fallback to company warehouse
+    return { isAdmin: false, allowedWarehouseIds: [] };
+  }
+
+  const whRows = await this.whRepo
+    .createQueryBuilder('w')
+    .select(['w.id AS id'])
+    .where('w.company_id=:cid', { cid: companyId })
+    .andWhere('w.deleted_at IS NULL')
+    .andWhere('w.owner_type=:ot', { ot: WarehouseOwnerType.DISTRIBUTOR })
+    .andWhere('w.owner_id IN (:...dids)', { dids: distributorIds })
+    .getRawMany();
+
+  return { isAdmin: false, allowedWarehouseIds: whRows.map((r: any) => String(r.id)) };
+}
+
 
 private getSubDistributorIdFromAuth(auth: AuthUser): string {
   const direct = auth.sub_distributor_id != null ? String(auth.sub_distributor_id) : '';
