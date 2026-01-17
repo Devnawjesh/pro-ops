@@ -38,6 +38,6 @@ import { MdWarehouse } from '../master/entities/md_warehouse.entity';
   ],
   controllers: [GrnController, StockController, TransferController],
   providers: [InventoryCommonService, GrnService, StockService, TransferService],
-  exports: [GrnService, StockService, TransferService],
+  exports: [GrnService, StockService, TransferService,InventoryCommonService],
 })
 export class InventoryModule {}
