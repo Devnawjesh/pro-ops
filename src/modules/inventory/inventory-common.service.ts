@@ -329,7 +329,7 @@ async resolveInventoryWarehouseScope(auth: AuthUser): Promise<{
   const scopes = await this.dataSource.query(
     `select scope_type, distributor_id
      from md_user_scope
-     where company_id=$1 and user_id=$2 and deleted_at is null`,
+     where company_id=$1 and user_id=$2`,
     [companyId, userId],
   );
 
