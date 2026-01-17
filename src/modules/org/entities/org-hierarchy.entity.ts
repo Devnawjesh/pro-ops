@@ -15,6 +15,7 @@ import { Route } from './route.entity';
 @Index(['company_id', 'code'], { unique: true })
 @Index(['company_id', 'level_no'])
 @Index(['parent_id'])
+
 export class OrgHierarchy extends BaseMasterEntity {
   @Column({ type: 'smallint' })
   level_no!: OrgLevel;

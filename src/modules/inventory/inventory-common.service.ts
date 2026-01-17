@@ -88,8 +88,12 @@ export class InventoryCommonService {
   }
 
   hasGlobalScope(auth: AuthUser) {
-    return (auth.scopes ?? []).some((s) => Number(s.scope_type) === ScopeType.GLOBAL);
+  // ✅ Only internal staff can ever use GLOBAL
+  if (Number(auth.user_type) !== UserType.EMPLOYEE) return false;
+
+  return (auth.scopes ?? []).some((s) => Number(s.scope_type) === ScopeType.GLOBAL);
   }
+
   isDistUser(auth: AuthUser) {
     return auth.user_type === UserType.DISTRIBUTOR_USER;
   }
@@ -209,6 +213,9 @@ async assertTransferReadable(auth: AuthUser, tr: InvTransfer) {
 
   // external users: allow only if they can access destination
   await this.assertWarehouseAccessible(auth, toWid);
+}
+public getSubDistId(auth: AuthUser): string {
+  return this.getSubDistributorIdFromAuth(auth);
 }
 
 async listMyWarehouseIds(auth: AuthUser) {
@@ -371,4 +378,6 @@ private getSubDistributorIdFromAuth(auth: AuthUser): string {
 
     return alloc;
   }
+
+
 }
