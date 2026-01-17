@@ -23,6 +23,8 @@ export class CreateOrderDto {
   @IsString()
   remarks?: string;
 
+  submit_now?: boolean;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderLineDto)

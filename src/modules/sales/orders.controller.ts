@@ -9,7 +9,7 @@ import { RejectOrderDto } from './dto/reject-order.dto';
 export class OrdersController {
   constructor(private readonly service: OrdersService) {}
 
-  // Create draft
+  // Create draft/submit new order
   @Post()
   create(@Req() req: any, @Body() dto: CreateOrderDto) {
     return this.service.createDraft(req.user, dto);

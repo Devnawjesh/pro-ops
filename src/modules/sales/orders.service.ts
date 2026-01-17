@@ -249,21 +249,30 @@ export class OrdersService {
     return await this.ds.transaction(async (manager) => {
       const order_no = await this.genOrderNo(auth.company_id);
 
-      const o = manager.create(SoOrder, {
-        company_id: auth.company_id,
-        order_no,
-        order_date: dto.order_date,
-        status: SoOrderStatus.DRAFT,
-        outlet_id: dto.outlet_id,
-        distributor_id: dto.distributor_id,
-        org_node_id: outletMeta.org_node_id,
-        outlet_type: outletMeta.outlet_type,
-        created_by_user_id: uid,
-        remarks: dto.remarks ?? null,
-        gross_amount: '0',
-        discount_amount: '0',
-        net_amount: '0',
-      } as any);
+      const isSubmitNow = dto.submit_now === true;
+
+const o = manager.create(SoOrder, {
+  company_id: auth.company_id,
+  order_no,
+  order_date: dto.order_date,
+  status: isSubmitNow ? SoOrderStatus.SUBMITTED : SoOrderStatus.DRAFT,
+
+  outlet_id: dto.outlet_id,
+  distributor_id: dto.distributor_id,
+  org_node_id: outletMeta.org_node_id,
+  outlet_type: outletMeta.outlet_type,
+
+  created_by_user_id: uid,
+  remarks: dto.remarks ?? null,
+
+  submitted_at: isSubmitNow ? new Date() : null,
+  submitted_by_user_id: isSubmitNow ? uid : null,
+
+  gross_amount: '0',
+  discount_amount: '0',
+  net_amount: '0',
+} as any);
+
 
       const saved = await manager.getRepository(SoOrder).save(o);
 

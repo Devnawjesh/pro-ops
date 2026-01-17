@@ -19,6 +19,7 @@ import { DistributorModule } from './modules/distributors/distributors.module';
 import { OutletModule } from './modules/master/outlet/outlet.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { SalesModule } from './modules/sales/sales.module';
 
 @Module({
   imports: [
@@ -47,7 +48,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
   OrgModule,
   OutletModule,
   PricingModule,
-  InventoryModule
+  InventoryModule,
+  SalesModule
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
