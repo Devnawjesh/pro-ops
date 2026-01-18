@@ -21,7 +21,11 @@ export class OrdersController {
   create(@Req() req: any, @Body() dto: CreateOrderDto) {
     return this.service.createDraft(req.user, dto);
   }
-
+  @Get('pending-approvals')
+  @Permissions('sales_orders:approve')
+    pendingApprovals(@Req() req: any, @Query() q: ListOrderDto) {
+    return this.service.listPendingApprovals(req.user, q);
+  }
   // Update draft (only DRAFT)
   @Patch(':id')
   @Permissions('sales_orders:update')
@@ -62,12 +66,6 @@ export class OrdersController {
   @Permissions('sales_orders:list')
   list(@Req() req: any, @Query() q: ListOrderDto) {
     return this.service.list(req.user, q);
-  }
-
-  @Get('pending-approvals')
-  @Permissions('sales_orders:approve')
-    pendingApprovals(@Req() req: any, @Query() q: ListOrderDto) {
-    return this.service.listPendingApprovals(req.user, q);
   }
 
 }
