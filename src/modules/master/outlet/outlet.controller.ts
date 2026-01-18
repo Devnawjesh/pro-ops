@@ -66,6 +66,17 @@ export class OutletController {
   list(@Req() req: any, @Query() q: ListOutletDto) {
     return this.service.list(req.user, q);
   }
+@Get('mapped-org')
+@Permissions('md_outlet.list')
+listMappedOrg(@Req() req: any, @Query() q: ListOutletDto) {
+  return this.service.listMappedOrg(req.user, q);
+}
+@Get('new-customers')
+@Permissions('md_outlet.list')
+listMyNewCustomers(@Req() req: any, @Query() q: ListOutletDto) {
+  return this.service.listMyNewCustomers(req.user, q);
+}
+
 
   @Get(':id')
   @Permissions('md_outlet.view')
@@ -91,10 +102,10 @@ export class OutletController {
         return this.service.bulkCreateFromExcel(req.user, file);
   }
   @Post('map/org-by-code')
-@Permissions('md_outlet_org.map')
-mapOrgByCode(@Req() req: any, @Body() dto: MapOutletOrgByCodeDto) {
-  return this.service.mapOutletOrgByCode(req.user, dto);
-}
+  @Permissions('md_outlet_org.map')
+  mapOrgByCode(@Req() req: any, @Body() dto: MapOutletOrgByCodeDto) {
+    return this.service.mapOutletOrgByCode(req.user, dto);
+  }
 
 @Post('map/org-by-code/bulk')
 @Permissions('md_outlet_org.bulk_import')

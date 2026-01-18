@@ -42,7 +42,11 @@ type AuthUser = {
   sub?: string;
   user_type?: number;
 };
-
+type OutletContext = {
+  distributor_ids: string[];   // allowed distributor ids
+  org_node_ids: string[];      // allowed territory ids (expanded)
+  forceDistributor: boolean;   // distributor user lock
+};
 @Injectable()
 export class OutletService {
   constructor(
@@ -177,7 +181,7 @@ private applyAccessFilter(
       lng: dto.lng ?? null,
       effective_from: dto.effective_from ?? null,
       effective_to: dto.effective_to ?? null,
-      status: Status.ACTIVE,
+      status: Status.INACTIVE,
       created_by: this.actorId(auth),
     } as any);
 
@@ -256,7 +260,7 @@ private applyAccessFilter(
       lng: r.lng,
       effective_from: r.effective_from,
       effective_to: r.effective_to,
-      status: Status.ACTIVE,
+      status: Status.INACTIVE,
       created_by: actor,
     }));
 
@@ -908,6 +912,220 @@ private async expandOrgScopeToTerritories(
   );
 
   return rows.map((r: any) => String(r.id));
+}
+async listMappedOrg(auth: AuthUser, dto: ListOutletDto) {
+  const ctx = await this.resolveOutletContext(auth, dto);
+
+  const page = Math.max(1, dto.page ?? 1);
+  const limit = Math.min(100, Math.max(1, dto.limit ?? 20));
+  const skip = (page - 1) * limit;
+  const today = this.ymdToday();
+
+  const qb = this.outletRepo
+    .createQueryBuilder('o')
+    .where('o.company_id=:cid', { cid: auth.company_id })
+    .andWhere('o.deleted_at IS NULL')
+
+    // must have org mapping
+    .innerJoin(
+      MdOutletOrg,
+      'oog',
+      `oog.company_id=o.company_id AND oog.outlet_id=o.id
+       AND oog.status = :active
+       AND oog.effective_from <= :today
+       AND (oog.effective_to IS NULL OR oog.effective_to >= :today)`,
+      { today, active: Status.ACTIVE },
+    )
+
+    // must have distributor mapping
+    .innerJoin(
+      MdOutletDistributor,
+      'od',
+      `od.company_id=o.company_id AND od.outlet_id=o.id
+       AND od.status = :active
+       AND od.effective_from <= :today
+       AND (od.effective_to IS NULL OR od.effective_to >= :today)`,
+      { today, active: Status.ACTIVE },
+    )
+
+    .innerJoin(
+      MdDistributor,
+      'd',
+      `d.company_id=o.company_id AND d.id=od.distributor_id AND d.deleted_at IS NULL`,
+    );
+
+  // search by code/name
+  if (dto.q?.trim()) {
+    const q = `%${dto.q.trim()}%`;
+    qb.andWhere(
+      new Brackets((b) => {
+        b.where('o.code ILIKE :q', { q }).orWhere('o.name ILIKE :q', { q });
+      }),
+    );
+  }
+
+  // ---- Scope enforcement (important) ----
+  // distributor user: lock to their distributor scope(s)
+  if (ctx.forceDistributor) {
+    if (!ctx.distributor_ids.length) qb.andWhere('1=0');
+    else qb.andWhere('od.distributor_id IN (:...dids)', { dids: ctx.distributor_ids });
+  } else {
+    // employee/org user: apply distributor scope if present, else org scope
+    if (ctx.distributor_ids.length) {
+      qb.andWhere('od.distributor_id IN (:...dids)', { dids: ctx.distributor_ids });
+    } else if (ctx.org_node_ids.length) {
+      qb.andWhere('oog.org_node_id IN (:...oids)', { oids: ctx.org_node_ids });
+    } else {
+      qb.andWhere('1=0');
+    }
+
+    // allow optional filter inside allowed scope
+    if (dto.distributor_id) qb.andWhere('od.distributor_id = :did', { did: dto.distributor_id });
+    if (dto.org_node_id) qb.andWhere('oog.org_node_id = :oid', { oid: dto.org_node_id });
+  }
+
+  // optional common filters
+  if (dto.status !== undefined) qb.andWhere('o.status = :st', { st: dto.status });
+  if (dto.outlet_type !== undefined) qb.andWhere('o.outlet_type = :ot', { ot: dto.outlet_type });
+
+  const rows = await qb
+    .clone()
+    .orderBy('o.id', 'DESC')
+    .skip(skip)
+    .take(limit)
+    .select([
+      'o.id AS id',
+      'o.code AS code',
+      'o.name AS name',
+      'o.address AS address',
+      'o.outlet_type AS outlet_type',
+      'o.mobile AS mobile',
+      'o.status AS status',
+      'oog.org_node_id AS org_node_id',
+      'od.distributor_id AS distributor_id',
+      'd.code AS distributor_code',
+      'd.name AS distributor_name',
+    ])
+    .getRawMany();
+
+  const total = await qb.clone().getCount();
+  return { page, limit, total, rows };
+}
+
+
+async listMyNewCustomers(auth: AuthUser, dto: ListOutletDto) {
+  const userId = this.actorId(auth);
+  if (!userId) throw new BadRequestException('Invalid user');
+
+  const scope = await this.resolveAccessScope(auth);
+
+  const page = Math.max(1, dto.page ?? 1);
+  const limit = Math.min(100, Math.max(1, dto.limit ?? 20));
+  const skip = (page - 1) * limit;
+
+  const qb = this.outletRepo
+    .createQueryBuilder('o')
+    .where('o.company_id=:cid', { cid: auth.company_id })
+    .andWhere('o.deleted_at IS NULL')
+    .andWhere('o.status = :st', { st: Status.INACTIVE }) // ✅ new/pending (0)
+
+    // ✅ only my created outlets
+    .andWhere('o.created_by = :me', { me: userId });
+
+  // optional filters (same as your list)
+  if (dto.outlet_type !== undefined) qb.andWhere('o.outlet_type = :ot', { ot: dto.outlet_type });
+
+  if (dto.q?.trim()) {
+    const q = `%${dto.q.trim()}%`;
+    qb.andWhere(
+      new Brackets((b) => {
+        b.where('o.code ILIKE :q', { q }).orWhere('o.name ILIKE :q', { q });
+      }),
+    );
+  }
+
+  // NOTE:
+  // For "my new customers" you typically should NOT apply distributor/org access filter,
+  // because they might be unmapped yet. But if you still want, you can apply it only
+  // if mappings exist. Best is: do NOT applyAccessFilter here.
+
+  const rows = await qb
+    .clone()
+    .orderBy('o.id', 'DESC')
+    .skip(skip)
+    .take(limit)
+    .select([
+      'o.id AS id',
+      'o.code AS code',
+      'o.name AS name',
+      'o.address AS address',
+      'o.outlet_type AS outlet_type',
+      'o.mobile AS mobile',
+      'o.status AS status',
+      'o.created_at AS created_at',
+    ])
+    .getRawMany();
+
+  const total = await qb.clone().getCount();
+
+  return { page, limit, total, rows };
+}
+
+private async resolveOutletContext(auth: AuthUser, dto: any): Promise<OutletContext> {
+  const uid = this.actorId(auth);
+  if (!uid) return { distributor_ids: [], org_node_ids: [], forceDistributor: false };
+
+  const scopes = await this.scopeRepo.find({
+    where: { company_id: auth.company_id as any, user_id: uid as any } as any,
+    order: { id: 'DESC' as any },
+    take: 200,
+  });
+
+  // ✅ Admin only if GLOBAL scope exists
+  if (scopes.some((s) => Number(s.scope_type) === ScopeType.GLOBAL)) {
+    return { distributor_ids: [], org_node_ids: [], forceDistributor: false };
+  }
+
+  const distributorIds = new Set<string>();
+  const orgNodeIds = new Set<string>();
+  const routeIds: string[] = [];
+
+  for (const s of scopes) {
+    if (Number(s.scope_type) === ScopeType.DISTRIBUTOR && s.distributor_id)
+      distributorIds.add(String(s.distributor_id));
+
+    if (Number(s.scope_type) === ScopeType.HIERARCHY && s.org_node_id)
+      orgNodeIds.add(String(s.org_node_id));
+
+    if (Number(s.scope_type) === ScopeType.ROUTE && s.route_id)
+      routeIds.push(String(s.route_id));
+  }
+
+  // ROUTE -> territory_id
+  if (routeIds.length) {
+    const rows = await this.routeRepo
+      .createQueryBuilder('r')
+      .select(['r.id AS id', 'r.territory_id AS territory_id'])
+      .where('r.company_id = :cid', { cid: auth.company_id })
+      .andWhere('r.deleted_at IS NULL')
+      .andWhere('r.id IN (:...ids)', { ids: routeIds })
+      .getRawMany();
+
+    for (const x of rows) if (x.territory_id) orgNodeIds.add(String(x.territory_id));
+  }
+
+  const expandedTerritoryIds =
+    orgNodeIds.size ? await this.expandOrgScopeToTerritories(auth.company_id, [...orgNodeIds]) : [];
+
+  const isDistUser =
+    Number(auth.user_type) === UserType.DISTRIBUTOR_USER ||
+    Number(auth.user_type) === UserType.SUB_DISTRIBUTOR_USER;
+
+  return {
+    distributor_ids: [...distributorIds],
+    org_node_ids: expandedTerritoryIds,
+    forceDistributor: isDistUser,
+  };
 }
 
 }
