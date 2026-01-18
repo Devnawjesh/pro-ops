@@ -1012,7 +1012,6 @@ async listMappedOrg(auth: AuthUser, dto: ListOutletDto) {
   return { page, limit, total, rows };
 }
 
-
 async listMyNewCustomers(auth: AuthUser, dto: ListOutletDto) {
   const userId = this.actorId(auth);
   if (!userId) throw new BadRequestException('Invalid user');

@@ -330,6 +330,10 @@ const o = manager.create(SoOrder, {
       };
     });
   }
+async listPendingApprovals(auth: AuthUser, q: ListOrderDto) {
+  // Force status=SUBMITTED regardless of caller
+  return this.list(auth, { ...q, status: String(SoOrderStatus.SUBMITTED) } as any);
+}
 
   // =========================================================
   // UPDATE DRAFT (replace lines)
@@ -626,84 +630,122 @@ const o = manager.create(SoOrder, {
     return { success: true, message: 'OK', data: { order: o, items, allocation: alloc ?? null } };
   }
 
-  // =========================================================
-  // LIST (admin + org scope + filters)
-  // =========================================================
-  async list(auth: AuthUser, q: ListOrderDto) {
-    const page = Number(q.page ?? 1);
-    const limit = Math.min(200, Math.max(1, Number(q.limit ?? 50)));
-    const skip = (page - 1) * limit;
+// =========================================================
+// LIST (admin + hierarchy scope + filters)
+// =========================================================
+async list(auth: AuthUser, q: ListOrderDto) {
+  const page = Math.max(1, Number(q.page ?? 1));
+  const limit = Math.min(200, Math.max(1, Number(q.limit ?? 50)));
+  const skip = (page - 1) * limit;
 
-    const qb = this.orderRepo
-      .createQueryBuilder('o')
-      .where('o.company_id=:cid', { cid: auth.company_id });
+  // ---------- resolve allowed territory ids for this user ----------
+  const allowedTerritoryIds = await this.resolveAllowedTerritoryIds(auth);
 
-    // scope filter
-    const myTerritory = await this.getMyTerritoryOrgNode(auth);
-    if (myTerritory) {
-      qb.andWhere('o.org_node_id::text = :org', { org: myTerritory });
-    }
-
-    // filters
-    if (q.status) qb.andWhere('o.status=:st', { st: Number(q.status) });
-    if (q.outlet_id) qb.andWhere('o.outlet_id=:oid', { oid: String(q.outlet_id) });
-    if (q.distributor_id) qb.andWhere('o.distributor_id=:did', { did: String(q.distributor_id) });
-    if (q.org_node_id) qb.andWhere('o.org_node_id=:orgid', { orgid: String(q.org_node_id) });
-
-    if (q.from_date) qb.andWhere('o.order_date >= :fd', { fd: q.from_date });
-    if (q.to_date) qb.andWhere('o.order_date <= :td', { td: q.to_date });
-
-    if (q.q?.trim()) {
-      qb.andWhere(
-        new Brackets((b) => {
-          b.where('o.order_no ILIKE :qq', { qq: `%${q.q!.trim()}%` }).orWhere('o.remarks ILIKE :qq', {
-            qq: `%${q.q!.trim()}%`,
-          });
-        }),
-      );
-    }
-
-    const total = await qb.getCount();
-
-    const rows = await qb
-      .leftJoin('md_outlet', 'out', 'out.id=o.outlet_id AND out.company_id=o.company_id AND out.deleted_at IS NULL')
-      .leftJoin('md_distributor', 'd', 'd.id=o.distributor_id AND d.company_id=o.company_id AND d.deleted_at IS NULL')
-      .select([
-        'o.id AS id',
-        'o.order_no AS order_no',
-        'o.order_date AS order_date',
-        'o.status AS status',
-        'o.outlet_id AS outlet_id',
-        'out.name AS outlet_name',
-        'o.distributor_id AS distributor_id',
-        'd.name AS distributor_name',
-        'o.org_node_id AS org_node_id',
-        'o.gross_amount AS gross_amount',
-        'o.discount_amount AS discount_amount',
-        'o.net_amount AS net_amount',
-        'o.created_at AS created_at',
-        'o.submitted_at AS submitted_at',
-        'o.approved_at AS approved_at',
-        'o.rejected_at AS rejected_at',
-      ])
-      .orderBy('o.id', 'DESC')
-      .offset(skip)
-      .limit(limit)
-      .getRawMany();
-
-    return { success: true, message: 'OK', page, limit, total, pages: Math.ceil(total / limit), rows };
+  // If user is scope-restricted but resolves to no territories -> empty result
+  if (allowedTerritoryIds !== null && allowedTerritoryIds.length === 0) {
+    return {
+      success: true,
+      message: 'OK',
+      page,
+      limit,
+      total: 0,
+      pages: 0,
+      rows: [],
+    };
   }
+
+  const qb = this.orderRepo
+    .createQueryBuilder('o')
+    .where('o.company_id=:cid', { cid: auth.company_id });
+
+  // Apply scope filter (only if not admin/global)
+  if (allowedTerritoryIds !== null) {
+    qb.andWhere('o.org_node_id = ANY(:tids)', {
+      tids: allowedTerritoryIds.map((x) => Number(x)),
+    });
+  }
+
+  // ---------- filters ----------
+  if (q.status != null && String(q.status).trim() !== '') {
+    qb.andWhere('o.status=:st', { st: Number(q.status) });
+  }
+
+  if (q.outlet_id) qb.andWhere('o.outlet_id=:oid', { oid: String(q.outlet_id) });
+  if (q.distributor_id) qb.andWhere('o.distributor_id=:did', { did: String(q.distributor_id) });
+  if (q.org_node_id) qb.andWhere('o.org_node_id=:orgid', { orgid: String(q.org_node_id) });
+
+  if (q.from_date) qb.andWhere('o.order_date >= :fd', { fd: String(q.from_date) });
+  if (q.to_date) qb.andWhere('o.order_date <= :td', { td: String(q.to_date) });
+
+  if (q.q?.trim()) {
+    const qq = `%${q.q.trim()}%`;
+    qb.andWhere(
+      new Brackets((b) => {
+        b.where('o.order_no ILIKE :qq', { qq }).orWhere('o.remarks ILIKE :qq', { qq });
+      }),
+    );
+  }
+
+  // ---------- total ----------
+  const total = await qb.getCount();
+
+  // ---------- rows ----------
+  const rows = await qb
+    .leftJoin('md_outlet', 'out', 'out.id=o.outlet_id AND out.company_id=o.company_id AND out.deleted_at IS NULL')
+    .leftJoin('md_distributor', 'd', 'd.id=o.distributor_id AND d.company_id=o.company_id AND d.deleted_at IS NULL')
+    .select([
+      'o.id AS id',
+      'o.order_no AS order_no',
+      'o.order_date AS order_date',
+      'o.status AS status',
+
+      'o.outlet_id AS outlet_id',
+      'out.name AS outlet_name',
+
+      'o.distributor_id AS distributor_id',
+      'd.name AS distributor_name',
+
+      'o.org_node_id AS org_node_id',
+
+      'o.gross_amount AS gross_amount',
+      'o.discount_amount AS discount_amount',
+      'o.net_amount AS net_amount',
+
+      'o.created_at AS created_at',
+      'o.submitted_at AS submitted_at',
+      'o.approved_at AS approved_at',
+      'o.rejected_at AS rejected_at',
+    ])
+    .orderBy('o.id', 'DESC')
+    .offset(skip)
+    .limit(limit)
+    .getRawMany();
+
+  return {
+    success: true,
+    message: 'OK',
+    page,
+    limit,
+    total,
+    pages: Math.ceil(total / limit),
+    rows,
+  };
+}
+
 
   // ---------------- internal helpers ----------------
 
   private async assertOrderReadableByScope(auth: AuthUser, o: SoOrder) {
-    const myTerritory = await this.getMyTerritoryOrgNode(auth);
-    if (!myTerritory) return; // admin or unscoped internal
+  const allowedTerritoryIds = await this.resolveAllowedTerritoryIds(auth);
 
-    if (!o.org_node_id || String(o.org_node_id) !== String(myTerritory)) {
-      throw new ForbiddenException('Order not in your scope');
-    }
+  if (allowedTerritoryIds === null) return; // admin/global
+  if (!allowedTerritoryIds?.length) throw new ForbiddenException('No order scope');
+
+  if (!o.org_node_id || !allowedTerritoryIds.includes(String(o.org_node_id))) {
+    throw new ForbiddenException('Order not in your scope');
   }
+}
+
 
   private async pickDistributorWarehouse(company_id: string, distributor_id: string): Promise<string | null> {
     const rows = await this.ds.query(
@@ -750,4 +792,59 @@ const o = manager.create(SoOrder, {
       }
     }
   }
+  private async resolveAllowedTerritoryIds(auth: AuthUser): Promise<string[] | null> {
+  const uid = this.actorId(auth);
+  if (!uid) throw new ForbiddenException('Unauthenticated');
+
+  // If you have a concept of "global scope admin", return null meaning "no restriction".
+  // Example: EMPLOYEE + GLOBAL scope (you already do similar in inventory service).
+  // If you don't have it here, comment this out.
+  // if (Number(auth.user_type) === UserType.EMPLOYEE && this.hasGlobalScope(auth)) return null;
+
+  const scopes = await this.ds.query(
+    `
+    select org_node_id
+    from md_user_scope
+    where company_id=$1
+      and user_id=$2
+      and scope_type=$3
+      and org_node_id is not null
+    `,
+    [auth.company_id, uid, ScopeType.HIERARCHY],
+  );
+
+  const rootIds = (scopes ?? []).map((r: any) => String(r.org_node_id));
+  if (!rootIds.length) return []; // has hierarchy restriction but no nodes
+
+  // Expand each scope node to all descendant territories (level_no=5)
+  // Works even if root is already territory.
+  const rows = await this.ds.query(
+    `
+    with recursive tree as (
+      select id, parent_id, level_no
+      from md_org_hierarchy
+      where company_id=$1
+        and id = any($2::bigint[])
+        and deleted_at is null
+        and status=1
+
+      union all
+
+      select c.id, c.parent_id, c.level_no
+      from md_org_hierarchy c
+      join tree t on t.id = c.parent_id
+      where c.company_id=$1
+        and c.deleted_at is null
+        and c.status=1
+    )
+    select distinct id
+    from tree
+    where level_no=5
+    `,
+    [auth.company_id, rootIds.map((x) => Number(x))],
+  );
+
+  return (rows ?? []).map((r: any) => String(r.id));
+}
+
 }

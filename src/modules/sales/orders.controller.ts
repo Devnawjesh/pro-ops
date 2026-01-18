@@ -63,4 +63,11 @@ export class OrdersController {
   list(@Req() req: any, @Query() q: ListOrderDto) {
     return this.service.list(req.user, q);
   }
+
+  @Get('pending-approvals')
+  @Permissions('sales_orders:approve')
+    pendingApprovals(@Req() req: any, @Query() q: ListOrderDto) {
+    return this.service.listPendingApprovals(req.user, q);
+  }
+
 }
