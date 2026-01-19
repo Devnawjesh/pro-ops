@@ -632,36 +632,103 @@ async listPendingApprovals(auth: AuthUser, q: ListOrderDto) {
   // =========================================================
   // GET ONE (header + items + allocation info)
   // =========================================================
-  async getOne(auth: AuthUser, id: string) {
-    const o = await this.orderRepo.findOne({ where: { id, company_id: auth.company_id } as any });
-    if (!o) throw new NotFoundException('Order not found');
+async getOne(auth: AuthUser, id: string) {
+  const o = await this.orderRepo.findOne({ where: { id, company_id: auth.company_id } as any });
+  if (!o) throw new NotFoundException('Order not found');
 
-    // visibility: admin sees all, org users must match scope if they have one
-    await this.assertOrderReadableByScope(auth, o);
+  await this.assertOrderReadableByScope(auth, o);
 
-    const items = await this.itemRepo
-      .createQueryBuilder('i')
-      .where('i.company_id=:cid', { cid: auth.company_id })
-      .andWhere('i.order_id=:oid', { oid: id })
-      .leftJoin('md_sku', 's', 's.id=i.sku_id AND s.company_id=i.company_id AND s.deleted_at IS NULL')
-      .select([
-        'i.id AS id',
-        'i.line_no AS line_no',
-        'i.sku_id AS sku_id',
-        's.code AS sku_code',
-        's.name AS sku_name',
-        'i.qty AS qty',
-        'i.unit_price AS unit_price',
-        'i.line_discount AS line_discount',
-        'i.line_total AS line_total',
-      ])
-      .orderBy('i.line_no', 'ASC')
-      .getRawMany();
+  // ---- distributor + outlet meta (code + name) ----
+  const metaRows = await this.ds.query(
+    `
+    select
+      o.id as order_id,
 
-    const alloc = await this.allocRepo.findOne({ where: { company_id: auth.company_id, order_id: id } as any });
+      d.id as distributor_id,
+      d.code as distributor_code,
+      d.name as distributor_name,
 
-    return { success: true, message: 'OK', data: { order: o, items, allocation: alloc ?? null } };
-  }
+      out.id as outlet_id,
+      out.code as outlet_code,
+      out.name as outlet_name
+
+    from so_order o
+    left join md_distributor d
+      on d.company_id=o.company_id
+     and d.id=o.distributor_id
+     and d.deleted_at is null
+    left join md_outlet out
+      on out.company_id=o.company_id
+     and out.id=o.outlet_id
+     and out.deleted_at is null
+    where o.company_id=$1 and o.id=$2
+    limit 1
+    `,
+    [auth.company_id, String(id)],
+  );
+
+  const meta = metaRows?.[0]
+    ? {
+        distributor_id: metaRows[0].distributor_id != null ? String(metaRows[0].distributor_id) : null,
+        distributor_code: metaRows[0].distributor_code ?? null,
+        distributor_name: metaRows[0].distributor_name ?? null,
+
+        outlet_id: metaRows[0].outlet_id != null ? String(metaRows[0].outlet_id) : null,
+        outlet_code: metaRows[0].outlet_code ?? null,
+        outlet_name: metaRows[0].outlet_name ?? null,
+      }
+    : {
+        distributor_id: null,
+        distributor_code: null,
+        distributor_name: null,
+        outlet_id: null,
+        outlet_code: null,
+        outlet_name: null,
+      };
+
+  // ---- items with sku code + name ----
+  const items = await this.itemRepo
+    .createQueryBuilder('i')
+    .where('i.company_id=:cid', { cid: auth.company_id })
+    .andWhere('i.order_id=:oid', { oid: id })
+    .leftJoin('md_sku', 's', 's.id=i.sku_id AND s.company_id=i.company_id AND s.deleted_at IS NULL')
+    .select([
+      'i.id AS id',
+      'i.line_no AS line_no',
+      'i.sku_id AS sku_id',
+      's.code AS sku_code',
+      's.name AS sku_name',
+      'i.qty AS qty',
+      'i.unit_price AS unit_price',
+      'i.line_discount AS line_discount',
+      'i.line_total AS line_total',
+    ])
+    .orderBy('i.line_no', 'ASC')
+    .getRawMany();
+
+  const alloc = await this.allocRepo.findOne({ where: { company_id: auth.company_id, order_id: id } as any });
+
+  return {
+    success: true,
+    message: 'OK',
+    data: {
+      order: o,
+      outlet: {
+        id: meta.outlet_id,
+        code: meta.outlet_code,
+        name: meta.outlet_name,
+      },
+      distributor: {
+        id: meta.distributor_id,
+        code: meta.distributor_code,
+        name: meta.distributor_name,
+      },
+      items,
+      allocation: alloc ?? null,
+    },
+  };
+}
+
 
 // =========================================================
 // LIST (admin + hierarchy scope + filters)
