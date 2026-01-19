@@ -807,18 +807,62 @@ private async getMyDistributorId(auth: AuthUser): Promise<string | null> {
   return rows?.[0]?.distributor_id != null ? String(rows[0].distributor_id) : null;
 }
 
+
   // ---------------- internal helpers ----------------
 
-  private async assertOrderReadableByScope(auth: AuthUser, o: SoOrder) {
-  const allowedTerritoryIds = await this.resolveAllowedTerritoryIds(auth);
+private async assertOrderReadableByScope(auth: AuthUser, o: SoOrder) {
+  const uid = this.actorId(auth);
+  if (!uid) throw new ForbiddenException('Unauthenticated');
 
-  if (allowedTerritoryIds === null) return; // admin/global
-  if (!allowedTerritoryIds?.length) throw new ForbiddenException('No order scope');
+  const utype = Number(auth.user_type);
 
-  if (!o.org_node_id || !allowedTerritoryIds.includes(String(o.org_node_id))) {
-    throw new ForbiddenException('Order not in your scope');
+  // ---------------------------------------------------------
+  // Distributor user: only own distributor orders
+  // ---------------------------------------------------------
+  if (utype === UserType.DISTRIBUTOR_USER || utype === UserType.SUB_DISTRIBUTOR_USER) {
+    const myDistributorId = await this.getMyDistributorId(auth);
+    if (!myDistributorId) throw new ForbiddenException('No distributor scope');
+
+    if (!o.distributor_id || String(o.distributor_id) !== String(myDistributorId)) {
+      throw new ForbiddenException('Order not in your distributor scope');
+    }
+    return;
   }
+
+  // ---------------------------------------------------------
+  // Employee user: hierarchy scope if exists, otherwise allow (admin)
+  // plus always allow own orders (created/submitted)
+  // ---------------------------------------------------------
+  if (utype === UserType.EMPLOYEE) {
+    // ✅ always allow own orders (very important for territory rep experience)
+    if (
+      String(o.created_by_user_id) === String(uid) ||
+      (o.submitted_by_user_id != null && String(o.submitted_by_user_id) === String(uid))
+    ) {
+      return;
+    }
+
+    // Expand employee scopes to allowed territory IDs
+    const allowedTerritoryIds = await this.resolveAllowedTerritoryIdsForEmployee(auth);
+
+    // If employee has no hierarchy scope rows -> treat as admin (allow)
+    if (!allowedTerritoryIds.length) {
+      return;
+    }
+
+    // If order has no org_node_id, you may decide to block it
+    if (!o.org_node_id) throw new ForbiddenException('Order has no territory mapping');
+
+    if (!allowedTerritoryIds.includes(String(o.org_node_id))) {
+      throw new ForbiddenException('Order not in your scope');
+    }
+    return;
+  }
+
+  // default: deny
+  throw new ForbiddenException('No order scope');
 }
+
 
 private async resolveAllowedTerritoryIdsForEmployee(auth: AuthUser): Promise<string[]> {
   const uid = this.actorId(auth);
@@ -871,6 +915,7 @@ private async resolveAllowedTerritoryIdsForEmployee(auth: AuthUser): Promise<str
 
   return (rows ?? []).map((r: any) => String(r.id));
 }
+
 
   private async pickDistributorWarehouse(company_id: string, distributor_id: string): Promise<string | null> {
     const rows = await this.ds.query(
