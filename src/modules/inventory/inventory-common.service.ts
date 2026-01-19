@@ -275,7 +275,10 @@ async resolveInventoryWarehouseScope(auth: AuthUser): Promise<{
   const companyId = String(auth.company_id);
 
   // ✅ 1) EMPLOYEE + GLOBAL => all warehouses
-  if (Number(auth.user_type) === UserType.EMPLOYEE && this.hasGlobalScope(auth)) {
+  // ✅ 1) EMPLOYEE
+if (Number(auth.user_type) === UserType.EMPLOYEE) {
+  // 1A) EMPLOYEE + GLOBAL => all warehouses
+  if (this.hasGlobalScope(auth)) {
     const rows = await this.whRepo
       .createQueryBuilder('w')
       .select(['w.id AS id'])
@@ -285,6 +288,23 @@ async resolveInventoryWarehouseScope(auth: AuthUser): Promise<{
 
     return { isAdmin: true, allowedWarehouseIds: rows.map((r: any) => String(r.id)) };
   }
+
+  // 1B) EMPLOYEE (admin/system) => allow COMPANY warehouses by default
+  // (this makes warehouse "1" visible if it is owner_type=COMPANY)
+  const rows = await this.whRepo
+    .createQueryBuilder('w')
+    .select(['w.id AS id'])
+    .where('w.company_id=:cid', { cid: companyId })
+    .andWhere('w.deleted_at IS NULL')
+    .andWhere('w.owner_type = :ot', { ot: WarehouseOwnerType.COMPANY })
+    .getRawMany();
+
+  // Optionally: if you truly want ONLY default warehouse 1:
+  // .andWhere('w.id = :wid', { wid: '1' })
+
+  return { isAdmin: true, allowedWarehouseIds: rows.map((r: any) => String(r.id)) };
+}
+
 
   // ✅ 2) Distributor user => only his distributor warehouses (do not rely on md_user_scope)
   if (Number(auth.user_type) === UserType.DISTRIBUTOR_USER) {
