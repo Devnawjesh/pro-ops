@@ -1,5 +1,5 @@
-import { IsArray, IsOptional, IsString, ValidateNested, IsNumberString, IsInt } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsArray, IsOptional, IsString, ValidateNested, IsNumberString, IsInt, IsBoolean } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 class OrderLineDto {
   @IsString()
@@ -23,8 +23,14 @@ export class CreateOrderDto {
   @IsString()
   remarks?: string;
 
+ @IsOptional()
+  @Transform(({ value }) => {
+    const v = String(value ?? '').trim().toLowerCase();
+    return v === 'true' || v === '1';
+  })
+  @IsBoolean()
   submit_now?: boolean;
-
+  
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderLineDto)

@@ -183,153 +183,186 @@ export class OrdersService {
   // =========================================================
   // CREATE DRAFT
   // =========================================================
-  async createDraft(auth: AuthUser, dto: CreateOrderDto) {
-    this.assertISODate(dto.order_date);
-    const uid = this.actorId(auth);
-    if (!uid) throw new ForbiddenException('Unauthenticated');
+async createDraft(auth: AuthUser, dto: CreateOrderDto) {
+  this.assertISODate(dto.order_date);
 
-    if (!dto.lines?.length) throw new BadRequestException('lines required');
+  const uid = this.actorId(auth);
+  if (!uid) throw new ForbiddenException('Unauthenticated');
+  if (!dto.lines?.length) throw new BadRequestException('lines required');
 
-    // territory restriction for org users (EMPLOYEE/REP etc)
-    // Distributor users can also create orders in their scope if you want—keep simple:
-    const myTerritory = await this.getMyTerritoryOrgNode(auth);
-    if (myTerritory) {
-      await this.assertOutletAccessibleByTerritory(auth, dto.outlet_id, myTerritory);
-    }
+  // ✅ robust submit flag parsing (snake_case + camelCase)
+  const rawSubmit =
+    (dto as any).submit_now ??
+    (dto as any).submitNow ??
+    (dto as any).submit ??
+    false;
 
-    // outlet meta (outlet_type + org_node_id)
-    const outletMeta = await this.loadOutletMeta(auth, dto.outlet_id);
+  const submitNow = (() => {
+    if (rawSubmit === true) return true;
+    if (rawSubmit === false || rawSubmit == null) return false;
+    const v = String(rawSubmit).trim().toLowerCase();
+    return v === 'true' || v === '1' || v === 'yes';
+  })();
 
-    // validate products are "available": you said "only available products can orders"
-    // we enforce stock availability from inventory scope warehouses
-    // and reserve later on approve; here just check qty_on_hand > 0.
-    await this.assertLinesStockReadableAndAvailable(auth, dto.lines);
+  // territory restriction (if any)
+  const myTerritory = await this.getMyTerritoryOrgNode(auth);
+  if (myTerritory) {
+    await this.assertOutletAccessibleByTerritory(auth, dto.outlet_id, myTerritory);
+  }
 
-    // Resolve unit prices + vat per sku using pricing engine (TP)
-    const pricedLines: PricedLine[] = [];
-    for (const l of dto.lines) {
-      const best = await this.pricing.resolveBestPrice(auth as any, {
-        date: dto.order_date,
-        distributor_id: dto.distributor_id,
-        org_node_id: outletMeta.org_node_id,
-        outlet_type: outletMeta.outlet_type,
-        sku_id: l.sku_id,
-      } as any);
+  const outletMeta = await this.loadOutletMeta(auth, dto.outlet_id);
 
-      if (!best?.found) throw new BadRequestException(`No price found for sku_id=${l.sku_id}`);
+  // stock check
+  await this.assertLinesStockReadableAndAvailable(auth, dto.lines);
 
-      const unit_price = Number(best.item.tp ?? 0);
-      const vat_rate = Number(best.item.vat_rate ?? 0);
-      if (!(unit_price > 0)) throw new BadRequestException(`Invalid TP price for sku_id=${l.sku_id}`);
+  // price resolve
+  const pricedLines: PricedLine[] = [];
+  for (const l of dto.lines) {
+    const sku_id = String(l.sku_id);
+    const qtyNum = Number(l.qty);
+    if (!(qtyNum > 0)) throw new BadRequestException(`qty must be > 0 for sku_id=${sku_id}`);
 
-      pricedLines.push({
-        sku_id: String(l.sku_id),
-        qty: Number(l.qty),
-        unit_price,
-        vat_rate,
-        price_list_id: String(best.price_list.id),
-        price_list_item_id: String(best.item.id),
-      });
-    }
-
-    // Apply schemes on TP amounts (before VAT)
-    const schemeRes = await this.pricing.applySchemesToOrder(auth as any, {
+    const best = await this.pricing.resolveBestPrice(auth as any, {
       date: dto.order_date,
       distributor_id: dto.distributor_id,
       org_node_id: outletMeta.org_node_id,
       outlet_type: outletMeta.outlet_type,
-      lines: pricedLines.map((x) => ({ sku_id: x.sku_id, qty: String(x.qty), unit_price: String(x.unit_price) })),
+      sku_id,
     } as any);
 
-    // map discounts back to lines by sku_id
-    const discBySku = new Map<string, number>();
-    for (const r of schemeRes.lines ?? []) discBySku.set(String(r.sku_id), Number(r.discount_amount ?? 0));
+    if (!best?.found) throw new BadRequestException(`No price found for sku_id=${sku_id}`);
 
-    // Create in TX
-    return await this.ds.transaction(async (manager) => {
-      const order_no = await this.genOrderNo(auth.company_id);
+    const unit_price = Number(best.item.tp ?? 0);
+    const vat_rate = Number(best.item.vat_rate ?? 0);
+    if (!(unit_price > 0)) throw new BadRequestException(`Invalid TP price for sku_id=${sku_id}`);
 
-      const isSubmitNow = dto.submit_now === true;
-
-const o = manager.create(SoOrder, {
-  company_id: auth.company_id,
-  order_no,
-  order_date: dto.order_date,
-  status: isSubmitNow ? SoOrderStatus.SUBMITTED : SoOrderStatus.DRAFT,
-
-  outlet_id: dto.outlet_id,
-  distributor_id: dto.distributor_id,
-  org_node_id: outletMeta.org_node_id,
-  outlet_type: outletMeta.outlet_type,
-
-  created_by_user_id: uid,
-  remarks: dto.remarks ?? null,
-
-  submitted_at: isSubmitNow ? new Date() : null,
-  submitted_by_user_id: isSubmitNow ? uid : null,
-
-  gross_amount: '0',
-  discount_amount: '0',
-  net_amount: '0',
-} as any);
-
-
-      const saved = await manager.getRepository(SoOrder).save(o);
-
-      let grossTotal = 0;
-      let discTotal = 0;
-      let netTotal = 0;
-
-      const items: SoOrderItem[] = [];
-      let lineNo = 1;
-
-      for (const pl of pricedLines) {
-        const lineDisc = discBySku.get(pl.sku_id) ?? 0;
-
-        const calc = this.computeLineAmounts({
-          qty: pl.qty,
-          unit_price: pl.unit_price,
-          line_discount: lineDisc,
-          vat_rate: pl.vat_rate,
-        });
-
-        grossTotal += calc.gross;
-        discTotal += calc.disc;
-        netTotal += calc.net;
-
-        items.push(
-          manager.create(SoOrderItem, {
-            company_id: auth.company_id,
-            order_id: saved.id,
-            line_no: lineNo++,
-            sku_id: pl.sku_id,
-            qty: String(pl.qty),
-            unit_price: String(pl.unit_price), // TP
-            line_discount: String(calc.disc),
-            line_total: String(calc.net), // net line (after VAT)
-          } as any),
-        );
-      }
-
-      await manager.getRepository(SoOrderItem).save(items);
-
-      saved.gross_amount = grossTotal.toFixed(2);
-      saved.discount_amount = discTotal.toFixed(2);
-      saved.net_amount = netTotal.toFixed(2);
-      await manager.getRepository(SoOrder).save(saved);
-
-      return {
-        success: true,
-        message: 'OK',
-        data: {
-          order: saved,
-          items,
-          applied_schemes: schemeRes.applied_schemes ?? [],
-          free_items: schemeRes.free_items ?? [],
-        },
-      };
+    pricedLines.push({
+      sku_id,
+      qty: qtyNum,
+      unit_price,
+      vat_rate,
+      price_list_id: String(best.price_list.id),
+      price_list_item_id: String(best.item.id),
     });
   }
+
+  // apply schemes
+  const schemeRes = await this.pricing.applySchemesToOrder(auth as any, {
+    date: dto.order_date,
+    distributor_id: dto.distributor_id,
+    org_node_id: outletMeta.org_node_id,
+    outlet_type: outletMeta.outlet_type,
+    lines: pricedLines.map((x) => ({
+      sku_id: x.sku_id,
+      qty: String(x.qty),
+      unit_price: String(x.unit_price),
+    })),
+  } as any);
+
+  const discBySku = new Map<string, number>();
+  for (const r of schemeRes.lines ?? []) discBySku.set(String(r.sku_id), Number(r.discount_amount ?? 0));
+
+  // TX
+  return await this.ds.transaction(async (manager) => {
+    const order_no = await this.genOrderNo(auth.company_id);
+    const statusToSave = submitNow ? SoOrderStatus.SUBMITTED : SoOrderStatus.DRAFT;
+
+    const orderRepo = manager.getRepository(SoOrder);
+    const itemRepo = manager.getRepository(SoOrderItem);
+
+    // create header
+    const orderEntity = orderRepo.create({
+      company_id: auth.company_id,
+      order_no,
+      order_date: dto.order_date,
+      status: statusToSave,
+
+      outlet_id: dto.outlet_id,
+      distributor_id: dto.distributor_id,
+      org_node_id: outletMeta.org_node_id,
+      outlet_type: outletMeta.outlet_type,
+
+      created_by_user_id: uid,
+      remarks: dto.remarks ?? null,
+
+      submitted_at: submitNow ? new Date() : null,
+      submitted_by_user_id: submitNow ? uid : null,
+
+      gross_amount: '0',
+      discount_amount: '0',
+      net_amount: '0',
+    } as any);
+
+    // save header (handle TS weirdness: can be SoOrder or SoOrder[])
+    const savedAny = (await orderRepo.save(orderEntity as any)) as any;
+
+    const orderId = String(Array.isArray(savedAny) ? savedAny?.[0]?.id : savedAny?.id);
+    if (!orderId) throw new ConflictException('Failed to create order (no id returned)');
+
+    // build item rows + totals
+    let grossTotal = 0;
+    let discTotal = 0;
+    let netTotal = 0;
+
+    const itemRows: any[] = [];
+    let lineNo = 1;
+
+    for (const pl of pricedLines) {
+      const lineDisc = discBySku.get(pl.sku_id) ?? 0;
+
+      const calc = this.computeLineAmounts({
+        qty: pl.qty,
+        unit_price: pl.unit_price,
+        line_discount: lineDisc,
+        vat_rate: pl.vat_rate,
+      });
+
+      grossTotal += calc.gross;
+      discTotal += calc.disc;
+      netTotal += calc.net;
+
+      itemRows.push({
+        company_id: auth.company_id,
+        order_id: orderId,
+        line_no: lineNo++,
+        sku_id: pl.sku_id,
+        qty: String(pl.qty),
+        unit_price: String(pl.unit_price),
+        line_discount: String(calc.disc),
+        line_total: String(calc.net),
+      });
+    }
+
+    await itemRepo.insert(itemRows);
+
+    // update totals (avoid saved.gross_amount typing problems)
+    await orderRepo.update(
+      { company_id: auth.company_id, id: orderId } as any,
+      {
+        gross_amount: grossTotal.toFixed(2),
+        discount_amount: discTotal.toFixed(2),
+        net_amount: netTotal.toFixed(2),
+        status: statusToSave as any,
+      } as any,
+    );
+
+    const order = await orderRepo.findOne({ where: { company_id: auth.company_id, id: orderId } as any });
+    const items = await itemRepo.find({ where: { company_id: auth.company_id, order_id: orderId } as any });
+
+    return {
+      success: true,
+      message: 'OK',
+      data: {
+        order,
+        items,
+        applied_schemes: schemeRes.applied_schemes ?? [],
+        free_items: schemeRes.free_items ?? [],
+      },
+    };
+  });
+}
+
+
 async listPendingApprovals(auth: AuthUser, q: ListOrderDto) {
   // Force status=SUBMITTED regardless of caller
   return this.list(auth, { ...q, status: String(SoOrderStatus.SUBMITTED) } as any);
@@ -638,41 +671,64 @@ async list(auth: AuthUser, q: ListOrderDto) {
   const limit = Math.min(200, Math.max(1, Number(q.limit ?? 50)));
   const skip = (page - 1) * limit;
 
-  // ---------- resolve allowed territory ids for this user ----------
-  const allowedTerritoryIds = await this.resolveAllowedTerritoryIds(auth);
-
-  // If user is scope-restricted but resolves to no territories -> empty result
-  if (allowedTerritoryIds !== null && allowedTerritoryIds.length === 0) {
-    return {
-      success: true,
-      message: 'OK',
-      page,
-      limit,
-      total: 0,
-      pages: 0,
-      rows: [],
-    };
-  }
-
   const qb = this.orderRepo
     .createQueryBuilder('o')
-    .where('o.company_id=:cid', { cid: auth.company_id });
+    .where('o.company_id = :cid', { cid: auth.company_id });
 
-  // Apply scope filter (only if not admin/global)
-  if (allowedTerritoryIds !== null) {
-    qb.andWhere('o.org_node_id = ANY(:tids)', {
-      tids: allowedTerritoryIds.map((x) => Number(x)),
-    });
+  // =========================================================
+  // 1) VISIBILITY SCOPE
+  // =========================================================
+
+  // -------------------------
+  // Distributor users
+  // -------------------------
+  if (
+    Number(auth.user_type) === UserType.DISTRIBUTOR_USER ||
+    Number(auth.user_type) === UserType.SUB_DISTRIBUTOR_USER
+  ) {
+    const distributorId = await this.getMyDistributorId(auth);
+
+    if (!distributorId) {
+      return { success: true, message: 'OK', page, limit, total: 0, pages: 0, rows: [] };
+    }
+
+    qb.andWhere('o.distributor_id::text = :did', { did: distributorId });
+  }
+  // -------------------------
+  // Employee users
+  // -------------------------
+  else if (Number(auth.user_type) === UserType.EMPLOYEE) {
+    const allowedTerritoryIds = await this.resolveAllowedTerritoryIds(auth);
+
+    // restricted but no territory resolved
+    if (allowedTerritoryIds !== null && allowedTerritoryIds.length === 0) {
+      return { success: true, message: 'OK', page, limit, total: 0, pages: 0, rows: [] };
+    }
+
+    // apply hierarchy restriction only if exists
+    if (allowedTerritoryIds !== null) {
+      qb.andWhere('o.org_node_id = ANY(:tids)', {
+        tids: allowedTerritoryIds.map((x) => Number(x)),
+      });
+    }
   }
 
-  // ---------- filters ----------
+  // =========================================================
+  // 2) FILTERS
+  // =========================================================
   if (q.status != null && String(q.status).trim() !== '') {
-    qb.andWhere('o.status=:st', { st: Number(q.status) });
+    qb.andWhere('o.status = :st', { st: Number(q.status) });
   }
 
-  if (q.outlet_id) qb.andWhere('o.outlet_id=:oid', { oid: String(q.outlet_id) });
-  if (q.distributor_id) qb.andWhere('o.distributor_id=:did', { did: String(q.distributor_id) });
-  if (q.org_node_id) qb.andWhere('o.org_node_id=:orgid', { orgid: String(q.org_node_id) });
+  if (q.outlet_id) qb.andWhere('o.outlet_id::text = :oid2', { oid2: String(q.outlet_id) });
+
+  // distributor_id filter allowed ONLY for employee
+  if (
+    q.distributor_id &&
+    Number(auth.user_type) === UserType.EMPLOYEE
+  ) {
+    qb.andWhere('o.distributor_id::text = :did2', { did2: String(q.distributor_id) });
+  }
 
   if (q.from_date) qb.andWhere('o.order_date >= :fd', { fd: String(q.from_date) });
   if (q.to_date) qb.andWhere('o.order_date <= :td', { td: String(q.to_date) });
@@ -686,10 +742,11 @@ async list(auth: AuthUser, q: ListOrderDto) {
     );
   }
 
-  // ---------- total ----------
+  // =========================================================
+  // 3) RESULT
+  // =========================================================
   const total = await qb.getCount();
 
-  // ---------- rows ----------
   const rows = await qb
     .leftJoin('md_outlet', 'out', 'out.id=o.outlet_id AND out.company_id=o.company_id AND out.deleted_at IS NULL')
     .leftJoin('md_distributor', 'd', 'd.id=o.distributor_id AND d.company_id=o.company_id AND d.deleted_at IS NULL')
@@ -732,6 +789,27 @@ async list(auth: AuthUser, q: ListOrderDto) {
   };
 }
 
+
+private async getMyDistributorId(auth: AuthUser): Promise<string | null> {
+  const uid = this.actorId(auth);
+  if (!uid) throw new ForbiddenException('Unauthenticated');
+
+  const rows = await this.ds.query(
+    `
+    select distributor_id
+    from md_user_scope
+    where company_id=$1
+      and user_id=$2
+      and scope_type=$3
+      and distributor_id is not null
+    order by id desc
+    limit 1
+    `,
+    [auth.company_id, uid, ScopeType.DISTRIBUTOR],
+  );
+
+  return rows?.[0]?.distributor_id ? String(rows[0].distributor_id) : null;
+}
 
   // ---------------- internal helpers ----------------
 
