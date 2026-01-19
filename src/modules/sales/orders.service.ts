@@ -671,62 +671,64 @@ async list(auth: AuthUser, q: ListOrderDto) {
   const limit = Math.min(200, Math.max(1, Number(q.limit ?? 50)));
   const skip = (page - 1) * limit;
 
+  const uid = this.actorId(auth);
+  if (!uid) throw new ForbiddenException('Unauthenticated');
+
   const qb = this.orderRepo
     .createQueryBuilder('o')
     .where('o.company_id = :cid', { cid: auth.company_id });
 
   // =========================================================
-  // 1) VISIBILITY SCOPE
+  // VISIBILITY SCOPE
   // =========================================================
 
-  // -------------------------
-  // Distributor users
-  // -------------------------
+  // 1) Distributor users: filter by distributor_id from md_user_scope
   if (
     Number(auth.user_type) === UserType.DISTRIBUTOR_USER ||
     Number(auth.user_type) === UserType.SUB_DISTRIBUTOR_USER
   ) {
     const distributorId = await this.getMyDistributorId(auth);
-
     if (!distributorId) {
       return { success: true, message: 'OK', page, limit, total: 0, pages: 0, rows: [] };
     }
 
-    qb.andWhere('o.distributor_id::text = :did', { did: distributorId });
+    qb.andWhere('o.distributor_id::text = :did', { did: String(distributorId) });
   }
-  // -------------------------
-  // Employee users
-  // -------------------------
+
+  // 2) Employee users: hierarchy scope (if exists) + fallback "my orders"
   else if (Number(auth.user_type) === UserType.EMPLOYEE) {
-    const allowedTerritoryIds = await this.resolveAllowedTerritoryIds(auth);
+    const allowedTerritoryIds = await this.resolveAllowedTerritoryIdsForEmployee(auth); // returns string[]
 
-    // restricted but no territory resolved
-    if (allowedTerritoryIds !== null && allowedTerritoryIds.length === 0) {
-      return { success: true, message: 'OK', page, limit, total: 0, pages: 0, rows: [] };
-    }
-
-    // apply hierarchy restriction only if exists
-    if (allowedTerritoryIds !== null) {
-      qb.andWhere('o.org_node_id = ANY(:tids)', {
-        tids: allowedTerritoryIds.map((x) => Number(x)),
-      });
+    if (allowedTerritoryIds.length > 0) {
+      qb.andWhere(
+        new Brackets((b) => {
+          b.where('o.org_node_id = ANY(:tids)', {
+            tids: allowedTerritoryIds.map((x) => Number(x)),
+          })
+            // ✅ fallback: show my orders even if org_node_id mapping/scope mismatch
+            .orWhere('o.created_by_user_id::text = :me', { me: String(uid) })
+            .orWhere('o.submitted_by_user_id::text = :me', { me: String(uid) });
+        }),
+      );
+    } else {
+      // ✅ No scope rows found -> at least show my orders (prevents "territory user sees nothing")
+      qb.andWhere(
+        new Brackets((b) => {
+          b.where('o.created_by_user_id::text = :me', { me: String(uid) })
+            .orWhere('o.submitted_by_user_id::text = :me', { me: String(uid) });
+        }),
+      );
     }
   }
 
   // =========================================================
-  // 2) FILTERS
+  // FILTERS
   // =========================================================
-  if (q.status != null && String(q.status).trim() !== '') {
-    qb.andWhere('o.status = :st', { st: Number(q.status) });
-  }
-
+  if (q.status != null && String(q.status).trim() !== '') qb.andWhere('o.status = :st', { st: Number(q.status) });
   if (q.outlet_id) qb.andWhere('o.outlet_id::text = :oid2', { oid2: String(q.outlet_id) });
 
-  // distributor_id filter allowed ONLY for employee
-  if (
-    q.distributor_id &&
-    Number(auth.user_type) === UserType.EMPLOYEE
-  ) {
+  // allow distributor_id filter only for EMPLOYEE (distributor users cannot override)
+  if (q.distributor_id && Number(auth.user_type) === UserType.EMPLOYEE) {
     qb.andWhere('o.distributor_id::text = :did2', { did2: String(q.distributor_id) });
   }
 
@@ -743,7 +745,7 @@ async list(auth: AuthUser, q: ListOrderDto) {
   }
 
   // =========================================================
-  // 3) RESULT
+  // RESULT
   // =========================================================
   const total = await qb.getCount();
 
@@ -768,6 +770,9 @@ async list(auth: AuthUser, q: ListOrderDto) {
       'o.discount_amount AS discount_amount',
       'o.net_amount AS net_amount',
 
+      'o.created_by_user_id AS created_by_user_id',
+      'o.submitted_by_user_id AS submitted_by_user_id',
+
       'o.created_at AS created_at',
       'o.submitted_at AS submitted_at',
       'o.approved_at AS approved_at',
@@ -778,17 +783,8 @@ async list(auth: AuthUser, q: ListOrderDto) {
     .limit(limit)
     .getRawMany();
 
-  return {
-    success: true,
-    message: 'OK',
-    page,
-    limit,
-    total,
-    pages: Math.ceil(total / limit),
-    rows,
-  };
+  return { success: true, message: 'OK', page, limit, total, pages: Math.ceil(total / limit), rows };
 }
-
 
 private async getMyDistributorId(auth: AuthUser): Promise<string | null> {
   const uid = this.actorId(auth);
@@ -808,7 +804,7 @@ private async getMyDistributorId(auth: AuthUser): Promise<string | null> {
     [auth.company_id, uid, ScopeType.DISTRIBUTOR],
   );
 
-  return rows?.[0]?.distributor_id ? String(rows[0].distributor_id) : null;
+  return rows?.[0]?.distributor_id != null ? String(rows[0].distributor_id) : null;
 }
 
   // ---------------- internal helpers ----------------
@@ -824,6 +820,57 @@ private async getMyDistributorId(auth: AuthUser): Promise<string | null> {
   }
 }
 
+private async resolveAllowedTerritoryIdsForEmployee(auth: AuthUser): Promise<string[]> {
+  const uid = this.actorId(auth);
+  if (!uid) throw new ForbiddenException('Unauthenticated');
+
+  const scopes = await this.ds.query(
+    `
+    select org_node_id
+    from md_user_scope
+    where company_id=$1
+      and user_id=$2
+      and scope_type=$3
+      and org_node_id is not null
+    `,
+    [auth.company_id, uid, ScopeType.HIERARCHY],
+  );
+
+  const rootIds = (scopes ?? [])
+    .map((r: any) => r.org_node_id)
+    .filter((x: any) => x != null)
+    .map((x: any) => Number(x));
+
+  if (!rootIds.length) return [];
+
+  const rows = await this.ds.query(
+    `
+    with recursive tree as (
+      select id, parent_id, level_no
+      from md_org_hierarchy
+      where company_id=$1
+        and id = any($2::bigint[])
+        and status=1
+        and deleted_at is null
+
+      union all
+
+      select c.id, c.parent_id, c.level_no
+      from md_org_hierarchy c
+      join tree t on t.id = c.parent_id
+      where c.company_id=$1
+        and c.status=1
+        and c.deleted_at is null
+    )
+    select distinct id
+    from tree
+    where level_no=5
+    `,
+    [auth.company_id, rootIds],
+  );
+
+  return (rows ?? []).map((r: any) => String(r.id));
+}
 
   private async pickDistributorWarehouse(company_id: string, distributor_id: string): Promise<string | null> {
     const rows = await this.ds.query(
