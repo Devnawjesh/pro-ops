@@ -8,18 +8,37 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // ✅ ENABLE CORS (THIS FIXES YOUR ERROR)
+  app.enableCors({
+  origin: [
+    'http://localhost:3000',
+  ],
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  credentials: true,
+  allowedHeaders: 'Content-Type, Authorization',
+});
+
+
   // Optional: seed only when SEED=true
   if (process.env.SEED === 'true') {
     const seed = app.get(SeedService);
     await seed.run();
   }
-app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true,transformOptions: { enableImplicitConversion: false } }));
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: false },
+    }),
+  );
 
   // success formatter
   app.useGlobalInterceptors(new ResponseInterceptor());
 
   // error formatter
   app.useGlobalFilters(new HttpExceptionFilter());
+
   await app.listen(process.env.PORT || 3000);
 }
 bootstrap();
