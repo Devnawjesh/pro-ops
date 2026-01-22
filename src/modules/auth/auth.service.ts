@@ -67,6 +67,8 @@ export class AuthService {
         company_id: user.company_id,
         username: user.username,
         full_name: user.full_name,
+        email: user.email,
+        mobile: user.mobile,
       },
     };
   }
@@ -103,6 +105,8 @@ export class AuthService {
       sub: user.id,
       company_id: user.company_id,
       username: user.username,
+      email: user.email,
+      mobile: user.mobile,
     };
 
     const access_token = await this.jwt.signAsync(payload, {

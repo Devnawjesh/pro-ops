@@ -78,6 +78,8 @@ export class UsersService {
       username: user.username,
       full_name: user.full_name,
       user_type: user.user_type,
+      email: user.email,
+      mobile: user.mobile,
       roles: roles.map((r) => ({ id: r.id, code: r.code, name: r.name })),
       permissions, // used by PermissionsGuard
       scopes,      // used by UI / filtering

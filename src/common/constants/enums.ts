@@ -74,6 +74,7 @@ export enum RefDocType {
   ORDER = 4,
   ADJUSTMENT = 5,
 }
+
 export enum TransferStatus {
   DISPATCHED = 2,      // created+dispatched immediately
   PARTIAL = 4,         // some received, still pending
