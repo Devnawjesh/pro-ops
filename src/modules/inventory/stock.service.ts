@@ -189,14 +189,12 @@ export class StockService {
 
     return { page, limit, total, pages: Math.ceil(total / limit), rows };
   }
-  async listAlerts(auth: any, dto: ListStockAlertsDto) {
+async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
   const scope = await this.common.resolveInventoryWarehouseScope(auth);
   const allowed = scope.allowedWarehouseIds ?? [];
   if (!allowed.length) throw new ForbiddenException('No inventory scope assigned');
 
-  const page = dto.page ?? 1;
-  const limit = Math.min(dto.limit ?? 50, 200);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = this.common.normalizePage(dto as any);
 
   const qb = this.balRepo
     .createQueryBuilder('b')
@@ -209,60 +207,63 @@ export class StockService {
       `p.company_id = b.company_id
        AND p.deleted_at IS NULL
        AND p.status = 'active'
-       AND p.distributor_id::text = w.owner_id::text
-       AND p.sku_id::text = b.sku_id::text`
+       AND p.distributor_id = w.owner_id
+       AND p.sku_id = b.sku_id`
     )
     .leftJoin('md_sku', 's',
       `s.id = b.sku_id
        AND s.company_id = b.company_id
        AND s.deleted_at IS NULL`
     )
-    // CHANGE THIS JOIN to your distributor master table
-    .leftJoin('md_distributor', 'd',
-      `d.id = w.owner_id
-       AND d.company_id = b.company_id
-       AND d.deleted_at IS NULL`
+    .leftJoin('md_distributor', 'dist',
+      `dist.id = w.owner_id
+       AND dist.company_id = b.company_id
+       AND dist.deleted_at IS NULL`
     )
-    .where('b.company_id = :cid', { cid: dto.companyId })
+    .where('b.company_id = :cid', { cid: auth.company_id })
     .andWhere('b.warehouse_id IN (:...wids)', { wids: allowed })
     .andWhere('w.owner_type = :ot', { ot: WarehouseOwnerType.DISTRIBUTOR });
 
+  // filters
+  if (dto.distributorId) qb.andWhere('w.owner_id = :did', { did: String(dto.distributorId) });
+  if (dto.skuId) qb.andWhere('b.sku_id = :sid', { sid: String(dto.skuId) });
 
-  // optional filters
-  if (dto.distributorId) qb.andWhere('w.owner_id::text = :did', { did: dto.distributorId });
-  if (dto.skuId) qb.andWhere('b.sku_id::text = :sid', { sid: dto.skuId });
-
-  // LOW / OVER conditions
   if (dto.type === 'LOW') {
-    qb.andWhere('p.min_qty IS NOT NULL AND b.qty_on_hand::numeric <= p.min_qty');
+    qb.andWhere('p.min_qty IS NOT NULL AND b.qty_on_hand <= p.min_qty');
     qb.orderBy('b.qty_on_hand', 'ASC');
   } else {
-    qb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand::numeric >= p.max_qty');
+    qb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand >= p.max_qty');
     qb.orderBy('b.qty_on_hand', 'DESC');
   }
 
   qb.select([
-    'b.warehouse_id AS "warehouseId"',
-    'w.code AS "warehouseCode"',     // adjust if your column name differs
-    'w.name AS "warehouseName"',
-    'w.owner_id AS "distributorId"',
+    'b.id AS id',
+    'b.warehouse_id AS warehouse_id',
+    'w.code AS warehouse_code',
+    'w.name AS warehouse_name',
 
-    'd.code AS "distributorCode"',
-    'd.name AS "distributorName"',
+    'b.sku_id AS sku_id',
+    's.code AS sku_code',
+    's.name AS sku_name',
 
-    'b.sku_id AS "skuId"',
-    's.code AS "skuCode"',
-    's.name AS "skuName"',
+    'w.owner_id AS distributor_id',
+    'dist.code AS distributor_code',
+    'dist.name AS distributor_name',
 
-    'b.qty_on_hand AS "qtyOnHand"',
-    'p.min_qty AS "minQty"',
-    'p.max_qty AS "maxQty"',
+    'b.qty_on_hand AS qty_on_hand',
+    'b.qty_reserved AS qty_reserved',
+
+    'p.min_qty AS min_qty',
+    'p.max_qty AS max_qty',
+
+    'b.updated_at AS updated_at',
   ]);
 
-  qb.offset(skip).limit(limit);
+  const total = await qb.getCount();
+  const rows = await qb.offset(skip).limit(limit).getRawMany();
 
-  const [rows, total] = await Promise.all([qb.getRawMany(), qb.getCount()]);
-  return { page, limit, total, rows };
+  return { page, limit, total, pages: Math.ceil(total / limit), rows };
 }
+
 
 }
