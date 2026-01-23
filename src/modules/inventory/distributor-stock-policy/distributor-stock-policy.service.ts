@@ -115,26 +115,26 @@ export class DistributorStockPolicyService {
       rows,
     };
   }
-  async listWithDetails(dto: ListDistributorStockPolicyDto) {
+async listWithDetails(dto: ListDistributorStockPolicyDto) {
   const page = dto.page ?? 1;
   const limit = Math.min(dto.limit ?? 50, 200);
   const skip = (page - 1) * limit;
 
   const qb = this.repo
     .createQueryBuilder('p')
-    .leftJoin('md_sku', 's',
+    .leftJoin(
+      'md_sku',
+      's',
       `s.id = p.sku_id
        AND s.company_id = p.company_id
-       AND s.deleted_at IS NULL`
+       AND s.deleted_at IS NULL`,
     )
-    // CHANGE THIS JOIN to your distributor master table
-    .leftJoin('md_distributor', 'd',
-      `d.id::text = p.distributor_id::text
-       AND d.company_id = p.company_id
-       AND d.deleted_at IS NULL`
-    )
-    .leftJoin('md_distributor', 'd',
-      `d.id = w.owner_id AND d.company_id = b.company_id AND d.deleted_at IS NULL`
+    .leftJoin(
+      'md_distributor',
+      'dist', // ✅ alias changed from 'd' to 'dist'
+      `dist.id = p.distributor_id
+       AND dist.company_id = p.company_id
+       AND dist.deleted_at IS NULL`,
     )
     .where('p.deleted_at IS NULL');
 
@@ -153,23 +153,30 @@ export class DistributorStockPolicyService {
     'p.status AS status',
     'p.updated_at AS "updatedAt"',
 
-    // sku fields (adjust column names if different)
     's.code AS "skuCode"',
     's.name AS "skuName"',
 
-    // distributor fields (adjust column names if different)
-    'd.code AS "distributorCode"',
-    'd.name AS "distributorName"',
+    'dist.code AS "distributorCode"',
+    'dist.name AS "distributorName"',
   ]);
 
   qb.orderBy('p.updated_at', 'DESC').offset(skip).limit(limit);
 
-  const [rows, total] = await Promise.all([
-    qb.getRawMany(),
-    qb.getCount(),
-  ]);
+  const rows = await qb.getRawMany();
+
+  // IMPORTANT: getCount() can be wrong with joins, and can also re-run with alias collisions.
+  // Best practice: run count from a cloned qb with only base table.
+  const total = await this.repo
+    .createQueryBuilder('p')
+    .where('p.deleted_at IS NULL')
+    .andWhere(dto.companyId ? 'p.company_id = :companyId' : '1=1', { companyId: dto.companyId })
+    .andWhere(dto.distributorId ? 'p.distributor_id = :distributorId' : '1=1', { distributorId: dto.distributorId })
+    .andWhere(dto.skuId ? 'p.sku_id = :skuId' : '1=1', { skuId: dto.skuId })
+    .andWhere(dto.status ? 'p.status = :status' : '1=1', { status: dto.status })
+    .getCount();
 
   return { page, limit, total, rows };
 }
+
 
 }
