@@ -241,6 +241,21 @@ async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
   // total (safe)
   const totalRow = await baseQb.clone().select('COUNT(DISTINCT b.id)', 'cnt').getRawOne();
   const total = Number(totalRow?.cnt ?? 0);
+// 1) How many rows successfully match a policy?
+const policyMatchRow = await baseQb
+  .clone()
+  .select('COUNT(DISTINCT b.id)', 'cnt')
+  .andWhere('p.id IS NOT NULL')
+  .getRawOne();
+console.log('ALERTS policy matched rows =', policyMatchRow?.cnt);
+
+// 2) How many rows satisfy LOW without the p.min check (just to see p.min exists)?
+const hasMinRow = await baseQb
+  .clone()
+  .select('COUNT(DISTINCT b.id)', 'cnt')
+  .andWhere('p.min_qty IS NOT NULL')
+  .getRawOne();
+console.log('ALERTS rows with p.min_qty not null =', hasMinRow?.cnt);
 
   // rows (details)
   const rowsQb = baseQb
