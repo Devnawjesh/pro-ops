@@ -35,6 +35,9 @@ export class InvTransferItem {
   @Column('numeric', { precision: 18, scale: 6 })
   qty_planned!: string;
 
+  @Column('numeric', { precision: 18, scale: 2, nullable: true })
+  dp_price!: string | null;
+
   @Column('numeric', { precision: 18, scale: 6, default: () => '0' })
   qty_dispatched_total!: string;
 

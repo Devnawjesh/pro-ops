@@ -21,6 +21,9 @@ import { InvTxnLot } from './entities/inv_txn_lot.entity';
 import { InvLot } from './entities/inv_lot.entity';
 
 import { MdWarehouse } from '../master/entities/md_warehouse.entity';
+import { PricingModule } from '../pricing/pricing.module';
+import { ArInvoice } from '../ar/entities/ar_invoice.entity';
+import { ArInvoiceItem } from '../ar/entities/ar_invoice_item.entity';
 
 @Module({
   imports: [
@@ -34,7 +37,10 @@ import { MdWarehouse } from '../master/entities/md_warehouse.entity';
       InvTxnLot,
       InvLot,
       MdWarehouse,
+      ArInvoice,
+      ArInvoiceItem,
     ]),
+    PricingModule,
   ],
   controllers: [GrnController, StockController, TransferController],
   providers: [InventoryCommonService, GrnService, StockService, TransferService],

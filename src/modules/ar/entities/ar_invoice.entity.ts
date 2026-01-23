@@ -29,6 +29,15 @@ export class ArInvoice {
   @Column({ type: 'bigint' })
   created_by_user_id: string;
 
+  @Column({ type: 'smallint', nullable: true })
+  ref_doc_type: number | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  ref_doc_id: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  ref_doc_no: string | null;
+
   @Column({ type: 'numeric', precision: 18, scale: 2, default: 0 })
   gross_amount: string;
 

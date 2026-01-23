@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DeepPartial, Repository } from 'typeorm';
+import { DeepPartial, EntityManager, Repository } from 'typeorm';
 
 import {
   InvLotSourceDocType,
@@ -22,10 +22,14 @@ import { InvTransferItem } from './entities/inv_transfer_item.entity';
 import { InvTxn } from './entities/inv_txn.entity';
 import { InvTxnLot } from './entities/inv_txn_lot.entity';
 import { InvLot } from './entities/inv_lot.entity';
+import { ArInvoice } from '../ar/entities/ar_invoice.entity';
+import { ArInvoiceItem } from '../ar/entities/ar_invoice_item.entity';
 
 import { CreateTransferDto } from './dto/transfer/create-transfer.dto';
 import { ListTransferDto } from './dto/transfer/list-transfer.dto';
 import { ReceiveTransferDto } from './dto/transfer/receive-transfer.dto';
+
+import { PricingService } from '../pricing/pricing.service';
 
 import {
   AuthUser,
@@ -51,13 +55,30 @@ export enum TransferStatus {
 export class TransferService {
   constructor(
     private readonly common: InventoryCommonService,
+    private readonly pricing: PricingService,
 
     @InjectRepository(InvTransfer) private readonly transferRepo: Repository<InvTransfer>,
     @InjectRepository(InvTransferItem) private readonly transferItemRepo: Repository<InvTransferItem>,
     @InjectRepository(InvTxn) private readonly txnRepo: Repository<InvTxn>,
     @InjectRepository(InvTxnLot) private readonly txnLotRepo: Repository<InvTxnLot>,
     @InjectRepository(InvLot) private readonly lotRepo: Repository<InvLot>,
+    @InjectRepository(ArInvoice) private readonly arRepo: Repository<ArInvoice>,
+    @InjectRepository(ArInvoiceItem) private readonly arItemRepo: Repository<ArInvoiceItem>,
   ) {}
+
+  private ymd(date: Date) {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  private async genArInvoiceNo(manager: EntityManager) {
+    const rows = await manager.query(`select nextval('ar_invoice_no_seq') as n`);
+    const n = rows?.[0]?.n ?? rows?.[0]?.nextval;
+    const padded = String(n ?? '').padStart(6, '0');
+    return `AR-${padded}`;
+  }
 
   // =========================================================
   // CREATE + DISPATCH (ADMIN)
@@ -86,6 +107,8 @@ export class TransferService {
     if (Number((toWh as any).owner_type) !== WarehouseOwnerType.DISTRIBUTOR) {
       throw new BadRequestException('Transfer destination must be distributor warehouse');
     }
+    const distributorId = String((toWh as any).owner_id ?? '').trim();
+    if (!distributorId) throw new BadRequestException('Distributor warehouse missing owner_id');
 
     // validate lines
     const seen = new Set<number>();
@@ -99,6 +122,23 @@ export class TransferService {
 
       // NOTE: you said you want no draft; so qty_planned in your dto is effectively qty_dispatch now
       ensurePositiveDec(`qty_planned/qty_dispatch (line ${ln})`, (it as any).qty_planned);
+    }
+
+    const dpByLine = new Map<number, string>();
+    for (const it of dto.items as any[]) {
+      const lineNo = Number(it.line_no);
+      const best = await this.pricing.resolveBestPrice(auth as any, {
+        date: dto.transfer_date,
+        distributor_id: distributorId,
+        sku_id: String(it.sku_id),
+      } as any);
+
+      if (!best?.found) throw new BadRequestException(`No price found for sku_id=${it.sku_id}`);
+
+      const dp = Number(best.item.dp ?? 0);
+      if (!(dp > 0)) throw new BadRequestException(`Invalid DP price for sku_id=${it.sku_id}`);
+
+      dpByLine.set(lineNo, String(best.item.dp));
     }
 
     const dispatchedAt = new Date();
@@ -137,6 +177,7 @@ export class TransferService {
         line_no: Number(it.line_no),
         sku_id: String(it.sku_id),
         qty_planned: String(it.qty_planned),
+        dp_price: dpByLine.get(Number(it.line_no)) ?? null,
         qty_dispatched_total: String(it.qty_planned),
         qty_received_total: '0',
       }));
@@ -330,6 +371,7 @@ async get(auth: AuthUser, id: string) {
       's.code AS sku_code',
       's.name AS sku_name',
       'it.qty_planned AS qty_planned',
+      'it.dp_price AS dp_price',
       'it.qty_dispatched_total AS qty_dispatched_total',
       'it.qty_received_total AS qty_received_total',
     ])
@@ -359,7 +401,9 @@ async get(auth: AuthUser, id: string) {
 
     const to_warehouse_id = String((tr as any).to_warehouse_id);
     // This also guarantees distributor can only receive into their own warehouse
-    await this.common.assertWarehouseAccessible(auth, to_warehouse_id);
+    const toWh = await this.common.assertWarehouseAccessible(auth, to_warehouse_id);
+    const distributorId = String((toWh as any).owner_id ?? '').trim();
+    if (!distributorId) throw new BadRequestException('Distributor warehouse missing owner_id');
 
     const receivedAt = parseDateOrThrow('received_at', dto.received_at);
 
@@ -383,6 +427,10 @@ async get(auth: AuthUser, id: string) {
       // lock items (optional: if you want strict concurrency use FOR UPDATE query via manager.query)
       const items = await itemRepo.find({ where: { company_id, transfer_id: transferId } as any });
       const byLine = new Map<number, any>(items.map((x: any) => [Number(x.line_no), x]));
+
+      const invoiceLines: DeepPartial<ArInvoiceItem>[] = [];
+      let gross = 0;
+      let lineNo = 1;
 
       for (const ln of dto.lines as any[]) {
         const row = byLine.get(Number(ln.line_no));
@@ -448,6 +496,25 @@ async get(auth: AuthUser, id: string) {
         row.qty_received_total = String(received + add);
         await itemRepo.save(row);
 
+        const unitPriceNum = Number(row.dp_price ?? 0);
+        if (!(unitPriceNum > 0)) {
+          throw new BadRequestException(`Missing DP price for line ${ln.line_no}`);
+        }
+
+        const lineTotalNum = unitPriceNum * add;
+        gross += lineTotalNum;
+
+        invoiceLines.push({
+          company_id,
+          invoice_id: '0',
+          line_no: lineNo++,
+          sku_id: String(row.sku_id),
+          qty: String(add),
+          unit_price: unitPriceNum.toFixed(2),
+          line_discount: '0',
+          line_total: lineTotalNum.toFixed(2),
+        });
+
         // increase stock in destination
         await this.common.applyBalanceDelta(manager, {
           company_id,
@@ -478,10 +545,50 @@ async get(auth: AuthUser, id: string) {
       (tr as any).updated_by = this.common.actorId(auth);
       await trRepo.save(tr as any);
 
+      let invoiceNo: string | null = null;
+      let invoiceId: string | null = null;
+
+      if (invoiceLines.length) {
+        const arRepo = manager.getRepository(ArInvoice);
+        const arItemRepo = manager.getRepository(ArInvoiceItem);
+
+        invoiceNo = await this.genArInvoiceNo(manager);
+        const invoice = await arRepo.save(
+          arRepo.create({
+            company_id,
+            invoice_no: invoiceNo,
+            invoice_date: this.ymd(receivedAt),
+            status: 1,
+            distributor_id: distributorId,
+            warehouse_id: to_warehouse_id,
+            created_by_user_id: this.common.actorId(auth),
+            ref_doc_type: RefDocType.TRANSFER,
+            ref_doc_id: transferId,
+            ref_doc_no: (tr as any).transfer_no ?? null,
+            gross_amount: gross.toFixed(2),
+            discount_amount: '0',
+            net_amount: gross.toFixed(2),
+          } as any),
+        );
+
+        invoiceId = String((invoice as any).id);
+
+        await arItemRepo.save(
+          arItemRepo.create(
+            invoiceLines.map((ln) => ({
+              ...ln,
+              invoice_id: invoiceId,
+            })),
+          ),
+        );
+      }
+
       return{
           id: transferId,
           status: Number((tr as any).status),
-          received_full: allDone
+          received_full: allDone,
+          ar_invoice_id: invoiceId,
+          ar_invoice_no: invoiceNo,
       };
     });
   }
