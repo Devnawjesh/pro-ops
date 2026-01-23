@@ -115,4 +115,58 @@ export class DistributorStockPolicyService {
       rows,
     };
   }
+  async listWithDetails(dto: ListDistributorStockPolicyDto) {
+  const page = dto.page ?? 1;
+  const limit = Math.min(dto.limit ?? 50, 200);
+  const skip = (page - 1) * limit;
+
+  const qb = this.repo
+    .createQueryBuilder('p')
+    .leftJoin('md_sku', 's',
+      `s.id = p.sku_id
+       AND s.company_id = p.company_id
+       AND s.deleted_at IS NULL`
+    )
+    // CHANGE THIS JOIN to your distributor master table
+    .leftJoin('md_distributor', 'd',
+      `d.id::text = p.distributor_id::text
+       AND d.company_id = p.company_id
+       AND d.deleted_at IS NULL`
+    )
+    .where('p.deleted_at IS NULL');
+
+  if (dto.companyId) qb.andWhere('p.company_id = :companyId', { companyId: dto.companyId });
+  if (dto.distributorId) qb.andWhere('p.distributor_id = :distributorId', { distributorId: dto.distributorId });
+  if (dto.skuId) qb.andWhere('p.sku_id = :skuId', { skuId: dto.skuId });
+  if (dto.status) qb.andWhere('p.status = :status', { status: dto.status });
+
+  qb.select([
+    'p.id AS id',
+    'p.company_id AS "companyId"',
+    'p.distributor_id AS "distributorId"',
+    'p.sku_id AS "skuId"',
+    'p.min_qty AS "minQty"',
+    'p.max_qty AS "maxQty"',
+    'p.status AS status',
+    'p.updated_at AS "updatedAt"',
+
+    // sku fields (adjust column names if different)
+    's.code AS "skuCode"',
+    's.name AS "skuName"',
+
+    // distributor fields (adjust column names if different)
+    'd.code AS "distributorCode"',
+    'd.name AS "distributorName"',
+  ]);
+
+  qb.orderBy('p.updated_at', 'DESC').offset(skip).limit(limit);
+
+  const [rows, total] = await Promise.all([
+    qb.getRawMany(),
+    qb.getCount(),
+  ]);
+
+  return { page, limit, total, rows };
+}
+
 }

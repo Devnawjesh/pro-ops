@@ -34,10 +34,11 @@ export class DistributorStockPolicyController {
   }
 
   @Get()
-  @Permissions('inv_distributor_stock_policy.list')
-  async list(@Query() dto: ListDistributorStockPolicyDto) {
-    return this.service.list(dto);
-  }
+@Permissions('inv_distributor_stock_policy.list')
+list(@Query() dto: ListDistributorStockPolicyDto) {
+  return this.service.listWithDetails(dto);
+}
+
 
   @Get(':id')
   @Permissions('inv_distributor_stock_policy.view')
