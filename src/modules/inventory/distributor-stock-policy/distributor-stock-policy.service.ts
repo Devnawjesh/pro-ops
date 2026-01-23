@@ -127,6 +127,12 @@ export class DistributorStockPolicyService {
        AND s.company_id = p.company_id
        AND s.deleted_at IS NULL`
     )
+    // CHANGE THIS JOIN to your distributor master table
+    .leftJoin('md_distributor', 'd',
+      `d.id::text = p.distributor_id::text
+       AND d.company_id = p.company_id
+       AND d.deleted_at IS NULL`
+    )
     .leftJoin('md_distributor', 'd',
       `d.id = w.owner_id AND d.company_id = b.company_id AND d.deleted_at IS NULL`
     )
