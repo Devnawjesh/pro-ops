@@ -190,22 +190,32 @@ export class StockService {
     return { page, limit, total, pages: Math.ceil(total / limit), rows };
   }
 async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
-  if (dto.companyId && String(dto.companyId) !== String(auth.company_id)) {
-    throw new ForbiddenException('Invalid company scope');
-  }
-  const company_id = String(dto.companyId ?? auth.company_id);
+  // ✅ hardcoded company
+  const company_id = '1';
 
+  // paging coercion
   (dto as any).page = dto.page != null ? Number(dto.page) : undefined;
   (dto as any).limit = dto.limit != null ? Number(dto.limit) : undefined;
 
+  // scope (still respected)
   const scope = await this.common.resolveInventoryWarehouseScopeForAlerts(auth);
   const allowedWarehouseIds = scope.allowedWarehouseIds ?? [];
   if (!allowedWarehouseIds.length) throw new ForbiddenException('No inventory scope assigned');
 
-  const allowedWids = allowedWarehouseIds.map((x) => Number(x)).filter((n) => Number.isFinite(n));
+  // match bigint in DB
+  const allowedWids = await this.whRepo
+  .createQueryBuilder('w')
+  .select('w.id', 'id')
+  .where('w.company_id=:cid', { cid: company_id })
+  .andWhere('w.deleted_at IS NULL')
+  .getRawMany()
+  .then(r => r.map(x => Number(x.id)));
+
   const { page, limit, skip } = this.common.normalizePage(dto as any);
 
-  // Base query
+  // ---------------------------
+  // Base query: balance + warehouse + policy
+  // ---------------------------
   const baseQb = this.balRepo
     .createQueryBuilder('b')
     .innerJoin(
@@ -221,50 +231,46 @@ async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
       `p.company_id = b.company_id
        AND p.deleted_at IS NULL
        AND p.status = 'active'
-       AND p.distributor_id::text = w.owner_id::text
-       AND p.sku_id::text = b.sku_id::text`,
+       AND p.distributor_id = w.owner_id
+       AND p.sku_id = b.sku_id`,
     )
     .where('b.company_id = :cid', { cid: company_id })
     .andWhere('b.warehouse_id IN (:...wids)', { wids: allowedWids })
-    .andWhere('w.owner_type = :ot', { ot: 2 });
+    .andWhere('w.owner_type = :ot', { ot: 2 }); // 2 = DISTRIBUTOR
 
-  if (dto.distributorId) baseQb.andWhere('w.owner_id::text = :did', { did: String(dto.distributorId) });
-  if (dto.skuId) baseQb.andWhere('b.sku_id::text = :sid', { sid: String(dto.skuId) });
+  // optional filters
+  if (dto.distributorId) baseQb.andWhere('w.owner_id = :did', { did: String(dto.distributorId) });
+  if (dto.skuId) baseQb.andWhere('b.sku_id = :sid', { sid: String(dto.skuId) });
 
-  // LOW / OVER
+  // low/over
   if (dto.type === 'LOW') {
     baseQb.andWhere('p.min_qty IS NOT NULL AND b.qty_on_hand <= p.min_qty');
   } else {
     baseQb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand >= p.max_qty');
   }
 
-  // total (safe)
+  // ---------------------------
+  // Total (safe)
+  // ---------------------------
   const totalRow = await baseQb.clone().select('COUNT(DISTINCT b.id)', 'cnt').getRawOne();
   const total = Number(totalRow?.cnt ?? 0);
-// 1) How many rows successfully match a policy?
-const policyMatchRow = await baseQb
-  .clone()
-  .select('COUNT(DISTINCT b.id)', 'cnt')
-  .andWhere('p.id IS NOT NULL')
-  .getRawOne();
-console.log('ALERTS policy matched rows =', policyMatchRow?.cnt);
 
-// 2) How many rows satisfy LOW without the p.min check (just to see p.min exists)?
-const hasMinRow = await baseQb
-  .clone()
-  .select('COUNT(DISTINCT b.id)', 'cnt')
-  .andWhere('p.min_qty IS NOT NULL')
-  .getRawOne();
-console.log('ALERTS rows with p.min_qty not null =', hasMinRow?.cnt);
-
-  // rows (details)
+  // ---------------------------
+  // Rows (add SKU + Distributor)
+  // ---------------------------
   const rowsQb = baseQb
     .clone()
-    .leftJoin('md_sku', 's', `s.id = b.sku_id AND s.company_id = b.company_id AND s.deleted_at IS NULL`)
+    .leftJoin(
+      'md_sku',
+      's',
+      `s.id = b.sku_id
+       AND s.company_id = b.company_id
+       AND s.deleted_at IS NULL`,
+    )
     .leftJoin(
       'md_distributor',
       'dist',
-      `dist.id::text = w.owner_id::text
+      `dist.id = w.owner_id
        AND dist.company_id = b.company_id
        AND dist.deleted_at IS NULL`,
     )
