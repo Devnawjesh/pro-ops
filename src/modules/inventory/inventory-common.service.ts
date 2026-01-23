@@ -41,6 +41,7 @@ export type AuthUser = {
   sub_distributor_id?: string | null;
 
   scopes?: AuthScope[];
+  roles?: Array<{ id?: string; code?: string; name?: string }>;
 };
 
 // ------------------------------------
@@ -87,11 +88,17 @@ export class InventoryCommonService {
     return String(auth.user_id ?? auth.id ?? auth.sub ?? '');
   }
 
-  hasGlobalScope(auth: AuthUser) {
-  // ✅ Only internal staff can ever use GLOBAL
-  if (Number(auth.user_type) !== UserType.EMPLOYEE) return false;
+  private hasRole(auth: AuthUser, code: string) {
+    return (auth.roles ?? []).some((r) => String(r.code ?? '') === code);
+  }
 
-  return (auth.scopes ?? []).some((s) => Number(s.scope_type) === ScopeType.GLOBAL);
+  hasGlobalScope(auth: AuthUser) {
+    // ✅ Only internal staff can ever use GLOBAL
+    if (Number(auth.user_type) !== UserType.EMPLOYEE) return false;
+
+    if (this.hasRole(auth, 'SUPER_ADMIN')) return true;
+
+    return (auth.scopes ?? []).some((s) => Number(s.scope_type) === ScopeType.GLOBAL);
   }
 
   isDistUser(auth: AuthUser) {
