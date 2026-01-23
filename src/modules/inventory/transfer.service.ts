@@ -506,7 +506,6 @@ async get(auth: AuthUser, id: string) {
 
         invoiceLines.push({
           company_id,
-          invoice_id: '0',
           line_no: lineNo++,
           sku_id: String(row.sku_id),
           qty: String(add),
@@ -577,7 +576,7 @@ async get(auth: AuthUser, id: string) {
           arItemRepo.create(
             invoiceLines.map((ln) => ({
               ...ln,
-              invoice_id: invoiceId,
+              invoice_id: invoiceId as string,
             })),
           ),
         );
