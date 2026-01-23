@@ -13,7 +13,11 @@ import { ListStockAlertsDto } from '../dto/stock/ListStockAlertsDto.dto';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class StockController {
   constructor(private readonly service: StockService) {}
-
+  @Get('/alerts')
+  @Permissions('inv_stock.alerts.list')
+  listAlerts(@Req() req: any, @Query() dto: ListStockAlertsDto) {
+    return this.service.listAlerts(req.user, dto);
+  }
   @Get()
   @Permissions('inv_stock.list')
   list(@Req() req: any, @Query() q: ListStockDto) {
@@ -23,11 +27,6 @@ export class StockController {
   @Permissions('inv_stock.lots')
   lots(@Req() req: any, @Query() q: ListLotDto) {
     return this.service.listLots(req.user, q);
-  }
-  @Get('/alerts')
-  @Permissions('inv_stock.alerts.list')
-  listAlerts(@Req() req: any, @Query() dto: ListStockAlertsDto) {
-    return this.service.listAlerts(req.user, dto);
   }
 
 }
