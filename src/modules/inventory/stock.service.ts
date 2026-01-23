@@ -219,13 +219,14 @@ export class StockService {
     )
     // CHANGE THIS JOIN to your distributor master table
     .leftJoin('md_distributor', 'd',
-      `d.id::text = w.owner_id::text
+      `d.id = w.owner_id
        AND d.company_id = b.company_id
        AND d.deleted_at IS NULL`
     )
     .where('b.company_id = :cid', { cid: dto.companyId })
     .andWhere('b.warehouse_id IN (:...wids)', { wids: allowed })
-    .andWhere('w.owner_type = :ot', { ot: 'DISTRIBUTOR' });
+    .andWhere('w.owner_type = :ot', { ot: WarehouseOwnerType.DISTRIBUTOR });
+
 
   // optional filters
   if (dto.distributorId) qb.andWhere('w.owner_id::text = :did', { did: dto.distributorId });
