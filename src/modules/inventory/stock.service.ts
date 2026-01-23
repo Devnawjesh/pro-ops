@@ -248,6 +248,7 @@ async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
   } else {
     baseQb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand >= p.max_qty');
   }
+console.log(await this.balRepo.query(`select current_database() db, current_schema() schema`));
 
   // ---------------------------
   // Total (safe)
