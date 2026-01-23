@@ -21,6 +21,7 @@ import { PricingModule } from './modules/pricing/pricing.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { DistributorStockPolicyModule } from './modules/inventory/distributor-stock-policy/distributor-stock-policy.module';
+import { ArModule } from './modules/ar/ar.module';
 
 @Module({
   imports: [
@@ -51,7 +52,8 @@ import { DistributorStockPolicyModule } from './modules/inventory/distributor-st
   PricingModule,
   InventoryModule,
   SalesModule,
-  DistributorStockPolicyModule
+  DistributorStockPolicyModule,
+  ArModule
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
