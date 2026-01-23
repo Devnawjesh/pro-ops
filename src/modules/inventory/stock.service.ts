@@ -195,7 +195,6 @@ async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
   }
   const company_id = String(dto.companyId ?? auth.company_id);
 
-  // paging coercion
   (dto as any).page = dto.page != null ? Number(dto.page) : undefined;
   (dto as any).limit = dto.limit != null ? Number(dto.limit) : undefined;
 
@@ -203,68 +202,60 @@ async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
   const allowedWarehouseIds = scope.allowedWarehouseIds ?? [];
   if (!allowedWarehouseIds.length) throw new ForbiddenException('No inventory scope assigned');
 
-  // ✅ Make IN values numeric to match bigint column
   const allowedWids = allowedWarehouseIds.map((x) => Number(x)).filter((n) => Number.isFinite(n));
-
-  console.log('ALERTS company_id=', company_id);
-  console.log('ALERTS allowedWids=', allowedWids);
-
   const { page, limit, skip } = this.common.normalizePage(dto as any);
 
-  // ---------------------------
-  // STEP DEBUG COUNTS
-  // ---------------------------
-  const c1 = await this.balRepo
-    .createQueryBuilder('b')
-    .where('b.company_id = :cid', { cid: company_id })
-    .andWhere('b.warehouse_id IN (:...wids)', { wids: allowedWids })
-    .getCount();
-  console.log('ALERTS count balances in allowed warehouses =', c1);
-
-  const c2 = await this.balRepo
-    .createQueryBuilder('b')
-    .innerJoin('md_warehouse', 'w', `w.id = b.warehouse_id AND w.company_id = b.company_id AND w.deleted_at IS NULL`)
-    .where('b.company_id = :cid', { cid: company_id })
-    .andWhere('b.warehouse_id IN (:...wids)', { wids: allowedWids })
-    .andWhere('w.owner_type = :ot', { ot: 2 })
-    .getCount();
-  console.log('ALERTS count after owner_type=2 join =', c2);
-
+  // Base query
   const baseQb = this.balRepo
     .createQueryBuilder('b')
-    .innerJoin('md_warehouse', 'w', `w.id = b.warehouse_id AND w.company_id = b.company_id AND w.deleted_at IS NULL`)
+    .innerJoin(
+      'md_warehouse',
+      'w',
+      `w.id = b.warehouse_id
+       AND w.company_id = b.company_id
+       AND w.deleted_at IS NULL`,
+    )
     .leftJoin(
       'inv_distributor_stock_policy',
       'p',
       `p.company_id = b.company_id
        AND p.deleted_at IS NULL
        AND p.status = 'active'
-       AND p.distributor_id = w.owner_id
-       AND p.sku_id = b.sku_id`,
+       AND p.distributor_id::text = w.owner_id::text
+       AND p.sku_id::text = b.sku_id::text`,
     )
     .where('b.company_id = :cid', { cid: company_id })
     .andWhere('b.warehouse_id IN (:...wids)', { wids: allowedWids })
     .andWhere('w.owner_type = :ot', { ot: 2 });
 
+  if (dto.distributorId) baseQb.andWhere('w.owner_id::text = :did', { did: String(dto.distributorId) });
+  if (dto.skuId) baseQb.andWhere('b.sku_id::text = :sid', { sid: String(dto.skuId) });
+
+  // LOW / OVER
   if (dto.type === 'LOW') {
     baseQb.andWhere('p.min_qty IS NOT NULL AND b.qty_on_hand <= p.min_qty');
   } else {
     baseQb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand >= p.max_qty');
   }
 
-  const c3row = await baseQb.clone().select('COUNT(DISTINCT b.id)', 'cnt').getRawOne();
-  const total = Number(c3row?.cnt ?? 0);
-  console.log('ALERTS count after policy threshold condition =', total);
+  // total (safe)
+  const totalRow = await baseQb.clone().select('COUNT(DISTINCT b.id)', 'cnt').getRawOne();
+  const total = Number(totalRow?.cnt ?? 0);
 
-  // ---------------------------
-  // ROWS QUERY
-  // ---------------------------
+  // rows (details)
   const rowsQb = baseQb
     .clone()
     .leftJoin('md_sku', 's', `s.id = b.sku_id AND s.company_id = b.company_id AND s.deleted_at IS NULL`)
-    .leftJoin('md_distributor', 'dist', `dist.id = w.owner_id AND dist.company_id = b.company_id AND dist.deleted_at IS NULL`)
+    .leftJoin(
+      'md_distributor',
+      'dist',
+      `dist.id::text = w.owner_id::text
+       AND dist.company_id = b.company_id
+       AND dist.deleted_at IS NULL`,
+    )
     .select([
       'b.id AS id',
+
       'b.warehouse_id AS warehouse_id',
       'w.code AS warehouse_code',
       'w.name AS warehouse_name',
