@@ -20,6 +20,7 @@ import { OutletModule } from './modules/master/outlet/outlet.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { SalesModule } from './modules/sales/sales.module';
+import { DistributorStockPolicyModule } from './modules/inventory/distributor-stock-policy/distributor-stock-policy.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { SalesModule } from './modules/sales/sales.module';
   PricingModule,
   InventoryModule,
   SalesModule,
+  DistributorStockPolicyModule
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
