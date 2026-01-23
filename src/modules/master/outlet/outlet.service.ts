@@ -292,6 +292,14 @@ private applyAccessFilter(
     });
     if (!row) throw new NotFoundException('Outlet not found');
 
+    if (dto.code?.trim() && dto.code.trim() !== row.code) {
+      const existing = await this.outletRepo.findOne({
+        where: { company_id: auth.company_id, code: dto.code.trim(), deleted_at: null } as any,
+      });
+      if (existing) throw new ConflictException('Outlet code already exists');
+      row.code = dto.code.trim();
+    }
+
     Object.assign(row, {
       name: dto.name?.trim() ?? row.name,
       outlet_type: dto.outlet_type ?? row.outlet_type,
@@ -662,6 +670,211 @@ private async resolveDistributorIdsByCodes(
   for (const r of rows) map.set(this.normalizeCodeKey(r.code), String(r.id));
   return map;
 }
+
+private async resolveValidOutletIds(
+  manager: any,
+  auth: AuthUser,
+  outletIds: string[],
+): Promise<Set<string>> {
+  const repo = manager.getRepository(MdOutlet);
+  const ids = [...new Set(outletIds.map((x) => String(x ?? '').trim()).filter(Boolean))];
+  if (!ids.length) return new Set();
+
+  const rows = await repo
+    .createQueryBuilder('o')
+    .select(['o.id AS id'])
+    .where('o.company_id = :cid', { cid: auth.company_id })
+    .andWhere('o.deleted_at IS NULL')
+    .andWhere('o.id IN (:...ids)', { ids })
+    .getRawMany();
+
+  return new Set(rows.map((r) => String(r.id)));
+}
+
+private async resolveValidOrgNodeIds(
+  manager: any,
+  auth: AuthUser,
+  orgNodeIds: string[],
+): Promise<Set<string>> {
+  const repo = manager.getRepository(OrgHierarchy);
+  const ids = [...new Set(orgNodeIds.map((x) => String(x ?? '').trim()).filter(Boolean))];
+  if (!ids.length) return new Set();
+
+  const rows = await repo
+    .createQueryBuilder('n')
+    .select(['n.id AS id'])
+    .where('n.company_id = :cid', { cid: auth.company_id })
+    .andWhere('n.deleted_at IS NULL')
+    .andWhere('n.id IN (:...ids)', { ids })
+    .getRawMany();
+
+  return new Set(rows.map((r) => String(r.id)));
+}
+
+private async resolveValidDistributorIds(
+  manager: any,
+  auth: AuthUser,
+  distributorIds: string[],
+): Promise<Set<string>> {
+  const repo = manager.getRepository(MdDistributor);
+  const ids = [...new Set(distributorIds.map((x) => String(x ?? '').trim()).filter(Boolean))];
+  if (!ids.length) return new Set();
+
+  const rows = await repo
+    .createQueryBuilder('d')
+    .select(['d.id AS id'])
+    .where('d.company_id = :cid', { cid: auth.company_id })
+    .andWhere('d.deleted_at IS NULL')
+    .andWhere('d.id IN (:...ids)', { ids })
+    .getRawMany();
+
+  return new Set(rows.map((r) => String(r.id)));
+}
+
+async mapOutletOrg(auth: AuthUser, dto: MapOutletOrgDto) {
+  return this.dataSource.transaction(async (manager) => {
+    const validOutlets = await this.resolveValidOutletIds(manager, auth, [dto.outlet_id]);
+    if (!validOutlets.has(String(dto.outlet_id))) {
+      throw new BadRequestException(`Invalid outlet_id: ${dto.outlet_id}`);
+    }
+
+    const validOrgNodes = await this.resolveValidOrgNodeIds(manager, auth, [dto.org_node_id]);
+    if (!validOrgNodes.has(String(dto.org_node_id))) {
+      throw new BadRequestException(`Invalid org_node_id: ${dto.org_node_id}`);
+    }
+
+    const saved = await this.closeOverlapAndInsertOrg(manager, auth, {
+      outlet_id: dto.outlet_id,
+      org_node_id: dto.org_node_id,
+      effective_from: dto.effective_from,
+      effective_to: dto.effective_to ?? null,
+    });
+
+    return { success: true, message: 'OK', data: { id: saved.id } };
+  });
+}
+
+async bulkMapOutletOrg(auth: AuthUser, dto: BulkMapOutletOrgDto) {
+  if (!dto.rows?.length) throw new BadRequestException('rows is required');
+
+  const seen = new Set<string>();
+  for (const r of dto.rows) {
+    const key = `${String(r.outlet_id ?? '').trim()}__${r.effective_from}`;
+    if (seen.has(key)) throw new BadRequestException(`Duplicate in payload: ${key}`);
+    seen.add(key);
+  }
+
+  return this.dataSource.transaction(async (manager) => {
+    const outletIds = dto.rows.map((r) => String(r.outlet_id ?? '').trim());
+    const orgNodeIds = dto.rows.map((r) => String(r.org_node_id ?? '').trim());
+
+    const validOutlets = await this.resolveValidOutletIds(manager, auth, outletIds);
+    const validOrgNodes = await this.resolveValidOrgNodeIds(manager, auth, orgNodeIds);
+
+    const missingOutlet = [...new Set(outletIds)].filter((id) => !validOutlets.has(id));
+    if (missingOutlet.length) {
+      throw new BadRequestException(`Invalid outlet_id(s): ${missingOutlet.slice(0, 30).join(', ')}`);
+    }
+
+    const missingOrg = [...new Set(orgNodeIds)].filter((id) => !validOrgNodes.has(id));
+    if (missingOrg.length) {
+      throw new BadRequestException(`Invalid org_node_id(s): ${missingOrg.slice(0, 30).join(', ')}`);
+    }
+
+    const results: any[] = [];
+    for (const r of dto.rows) {
+      try {
+        const saved = await this.closeOverlapAndInsertOrg(manager, auth, {
+          outlet_id: r.outlet_id,
+          org_node_id: r.org_node_id,
+          effective_from: r.effective_from,
+          effective_to: r.effective_to ?? null,
+        });
+        results.push({ outlet_id: r.outlet_id, id: saved.id, status: 'OK' });
+      } catch (e: any) {
+        if (e?.code === '23505') {
+          results.push({ outlet_id: r.outlet_id, status: 'DUPLICATE_EFFECTIVE_FROM' });
+          continue;
+        }
+        throw e;
+      }
+    }
+    return results;
+  });
+}
+
+async mapOutletDistributor(auth: AuthUser, dto: MapOutletDistributorDto) {
+  return this.dataSource.transaction(async (manager) => {
+    const validOutlets = await this.resolveValidOutletIds(manager, auth, [dto.outlet_id]);
+    if (!validOutlets.has(String(dto.outlet_id))) {
+      throw new BadRequestException(`Invalid outlet_id: ${dto.outlet_id}`);
+    }
+
+    const validDistributors = await this.resolveValidDistributorIds(manager, auth, [dto.distributor_id]);
+    if (!validDistributors.has(String(dto.distributor_id))) {
+      throw new BadRequestException(`Invalid distributor_id: ${dto.distributor_id}`);
+    }
+
+    const saved = await this.closeOverlapAndInsertDistributor(manager, auth, {
+      outlet_id: dto.outlet_id,
+      distributor_id: dto.distributor_id,
+      effective_from: dto.effective_from,
+      effective_to: dto.effective_to ?? null,
+    });
+
+    return { success: true, message: 'OK', data: { id: saved.id } };
+  });
+}
+
+async bulkMapOutletDistributor(auth: AuthUser, dto: BulkMapOutletDistributorDto) {
+  if (!dto.rows?.length) throw new BadRequestException('rows is required');
+
+  const seen = new Set<string>();
+  for (const r of dto.rows) {
+    const key = `${String(r.outlet_id ?? '').trim()}__${r.effective_from}`;
+    if (seen.has(key)) throw new BadRequestException(`Duplicate in payload: ${key}`);
+    seen.add(key);
+  }
+
+  return this.dataSource.transaction(async (manager) => {
+    const outletIds = dto.rows.map((r) => String(r.outlet_id ?? '').trim());
+    const distributorIds = dto.rows.map((r) => String(r.distributor_id ?? '').trim());
+
+    const validOutlets = await this.resolveValidOutletIds(manager, auth, outletIds);
+    const validDistributors = await this.resolveValidDistributorIds(manager, auth, distributorIds);
+
+    const missingOutlet = [...new Set(outletIds)].filter((id) => !validOutlets.has(id));
+    if (missingOutlet.length) {
+      throw new BadRequestException(`Invalid outlet_id(s): ${missingOutlet.slice(0, 30).join(', ')}`);
+    }
+
+    const missingDistributor = [...new Set(distributorIds)].filter((id) => !validDistributors.has(id));
+    if (missingDistributor.length) {
+      throw new BadRequestException(`Invalid distributor_id(s): ${missingDistributor.slice(0, 30).join(', ')}`);
+    }
+
+    const results: any[] = [];
+    for (const r of dto.rows) {
+      try {
+        const saved = await this.closeOverlapAndInsertDistributor(manager, auth, {
+          outlet_id: r.outlet_id,
+          distributor_id: r.distributor_id,
+          effective_from: r.effective_from,
+          effective_to: r.effective_to ?? null,
+        });
+        results.push({ outlet_id: r.outlet_id, id: saved.id, status: 'OK' });
+      } catch (e: any) {
+        if (e?.code === '23505') {
+          results.push({ outlet_id: r.outlet_id, status: 'DUPLICATE_EFFECTIVE_FROM' });
+          continue;
+        }
+        throw e;
+      }
+    }
+    return results;
+  });
+}
+
 async mapOutletOrgByCode(auth: AuthUser, dto: MapOutletOrgByCodeDto) {
   return this.dataSource.transaction(async (manager) => {
     const outletMap = await this.resolveOutletIdsByCodes(manager, auth, [dto.outlet_code]);
@@ -1013,10 +1226,9 @@ async listMappedOrg(auth: AuthUser, dto: ListOutletDto) {
 }
 
 async listMyNewCustomers(auth: AuthUser, dto: ListOutletDto) {
-  const userId = this.actorId(auth);
-  if (!userId) throw new BadRequestException('Invalid user');
-
   const scope = await this.resolveAccessScope(auth);
+  const userId = this.actorId(auth);
+  if (!userId && !scope.isAdmin) throw new BadRequestException('Invalid user');
 
   const page = Math.max(1, dto.page ?? 1);
   const limit = Math.min(100, Math.max(1, dto.limit ?? 20));
@@ -1029,7 +1241,7 @@ async listMyNewCustomers(auth: AuthUser, dto: ListOutletDto) {
     .andWhere('o.status = :st', { st: Status.INACTIVE }) // ✅ new/pending (0)
 
     // ✅ only my created outlets
-    .andWhere('o.created_by = :me', { me: userId });
+    .andWhere(scope.isAdmin ? '1=1' : 'o.created_by = :me', { me: userId });
 
   // optional filters (same as your list)
   if (dto.outlet_type !== undefined) qb.andWhere('o.outlet_type = :ot', { ot: dto.outlet_type });

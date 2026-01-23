@@ -37,7 +37,7 @@ import {
   MapOutletOrgByCodeDto,
 } from './dto/outlet-mapping-by-code.dto';
 
-@Controller('outlets')
+@Controller('master/outlets')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class OutletController {
   constructor(private readonly service: OutletService) {}
@@ -107,6 +107,18 @@ listMyNewCustomers(@Req() req: any, @Query() q: ListOutletDto) {
     return this.service.mapOutletOrgByCode(req.user, dto);
   }
 
+  @Post('map/org')
+  @Permissions('md_outlet_org.map')
+  mapOrg(@Req() req: any, @Body() dto: MapOutletOrgDto) {
+    return this.service.mapOutletOrg(req.user, dto);
+  }
+
+  @Post('map/org/bulk')
+  @Permissions('md_outlet_org.bulk_import')
+  bulkMapOrg(@Req() req: any, @Body() dto: BulkMapOutletOrgDto) {
+    return this.service.bulkMapOutletOrg(req.user, dto);
+  }
+
 @Post('map/org-by-code/bulk')
 @Permissions('md_outlet_org.bulk_import')
 bulkMapOrgByCode(@Req() req: any, @Body() dto: BulkMapOutletOrgByCodeDto) {
@@ -124,6 +136,18 @@ bulkMapOrgByCodeExcel(@Req() req: any, @UploadedFile() file: Express.Multer.File
 @Permissions('md_outlet_distributor.map')
 mapDistributorByCode(@Req() req: any, @Body() dto: MapOutletDistributorByCodeDto) {
   return this.service.mapOutletDistributorByCode(req.user, dto);
+}
+
+@Post('map/distributor')
+@Permissions('md_outlet_distributor.map')
+mapDistributor(@Req() req: any, @Body() dto: MapOutletDistributorDto) {
+  return this.service.mapOutletDistributor(req.user, dto);
+}
+
+@Post('map/distributor/bulk')
+@Permissions('md_outlet_distributor.bulk_import')
+bulkMapDistributor(@Req() req: any, @Body() dto: BulkMapOutletDistributorDto) {
+  return this.service.bulkMapOutletDistributor(req.user, dto);
 }
 
 @Post('map/distributor-by-code/bulk')

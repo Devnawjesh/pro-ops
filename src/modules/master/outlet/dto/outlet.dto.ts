@@ -60,6 +60,11 @@ export class CreateOutletDto {
 export class UpdateOutletDto {
   @IsOptional()
   @IsString()
+  @MaxLength(50)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(200)
   name?: string;
 
@@ -91,6 +96,9 @@ export class UpdateOutletDto {
   lng?: string | null;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1)
   status?: Status;
 
   @IsOptional()
