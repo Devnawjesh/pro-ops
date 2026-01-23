@@ -190,7 +190,7 @@ export class StockService {
     return { page, limit, total, pages: Math.ceil(total / limit), rows };
   }
 async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
-  const scope = await this.common.resolveInventoryWarehouseScope(auth);
+  const scope = await this.common.resolveInventoryWarehouseScopeForAlerts(auth);
   const allowed = scope.allowedWarehouseIds ?? [];
 
   const company_id = String(dto.companyId ?? auth.company_id);
@@ -217,7 +217,7 @@ async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
        AND p.distributor_id = w.owner_id
        AND p.sku_id = b.sku_id`
     )
-    .where('b.company_id = :cid', { cid: company_id })
+    .where('b.company_id = :cid', { cid: dto.companyId })
     .andWhere('b.warehouse_id IN (:...wids)', { wids: allowed })
     .andWhere('w.owner_type = :ot', { ot: 2 }); // force 2 for debugging
 

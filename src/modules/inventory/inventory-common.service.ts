@@ -378,6 +378,22 @@ if (Number(auth.user_type) === UserType.EMPLOYEE) {
   return { isAdmin: false, allowedWarehouseIds: whRows.map((r: any) => String(r.id)) };
 }
 
+async resolveInventoryWarehouseScopeForAlerts(auth: AuthUser) {
+  // employees: all warehouses (or at least distributor + company)
+  if (Number(auth.user_type) === UserType.EMPLOYEE) {
+    const rows = await this.whRepo
+      .createQueryBuilder('w')
+      .select(['w.id AS id'])
+      .where('w.company_id=:cid', { cid: String(auth.company_id) })
+      .andWhere('w.deleted_at IS NULL')
+      .getRawMany();
+
+    return { isAdmin: true, allowedWarehouseIds: rows.map(r => String(r.id)) };
+  }
+
+  // others: same as existing logic
+  return this.resolveInventoryWarehouseScope(auth);
+}
 
 private getSubDistributorIdFromAuth(auth: AuthUser): string {
   const direct = auth.sub_distributor_id != null ? String(auth.sub_distributor_id) : '';
