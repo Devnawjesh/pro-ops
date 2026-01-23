@@ -192,6 +192,15 @@ export class StockService {
 async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
   const scope = await this.common.resolveInventoryWarehouseScope(auth);
   const allowed = scope.allowedWarehouseIds ?? [];
+
+  const company_id = String(dto.companyId ?? auth.company_id);
+
+  console.log('auth.company_id=', auth.company_id);
+  console.log('dto.companyId=', dto.companyId);
+  console.log('company_id_used=', company_id);
+  console.log('allowedWarehouseIds=', allowed);
+  console.log('type=', dto.type);
+
   if (!allowed.length) throw new ForbiddenException('No inventory scope assigned');
 
   const { page, limit, skip } = this.common.normalizePage(dto as any);
@@ -199,9 +208,7 @@ async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
   const qb = this.balRepo
     .createQueryBuilder('b')
     .innerJoin('md_warehouse', 'w',
-      `w.id = b.warehouse_id
-       AND w.company_id = b.company_id
-       AND w.deleted_at IS NULL`
+      `w.id = b.warehouse_id AND w.company_id = b.company_id AND w.deleted_at IS NULL`
     )
     .leftJoin('inv_distributor_stock_policy', 'p',
       `p.company_id = b.company_id
@@ -210,60 +217,27 @@ async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
        AND p.distributor_id = w.owner_id
        AND p.sku_id = b.sku_id`
     )
-    .leftJoin('md_sku', 's',
-      `s.id = b.sku_id
-       AND s.company_id = b.company_id
-       AND s.deleted_at IS NULL`
-    )
-    .leftJoin('md_distributor', 'dist',
-      `dist.id = w.owner_id
-       AND dist.company_id = b.company_id
-       AND dist.deleted_at IS NULL`
-    )
-    .where('b.company_id = :cid', { cid: auth.company_id })
+    .where('b.company_id = :cid', { cid: company_id })
     .andWhere('b.warehouse_id IN (:...wids)', { wids: allowed })
-    .andWhere('w.owner_type = :ot', { ot: WarehouseOwnerType.DISTRIBUTOR });
-
-  // filters
-  if (dto.distributorId) qb.andWhere('w.owner_id = :did', { did: String(dto.distributorId) });
-  if (dto.skuId) qb.andWhere('b.sku_id = :sid', { sid: String(dto.skuId) });
+    .andWhere('w.owner_type = :ot', { ot: 2 }); // force 2 for debugging
 
   if (dto.type === 'LOW') {
     qb.andWhere('p.min_qty IS NOT NULL AND b.qty_on_hand <= p.min_qty');
-    qb.orderBy('b.qty_on_hand', 'ASC');
   } else {
     qb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand >= p.max_qty');
-    qb.orderBy('b.qty_on_hand', 'DESC');
   }
 
-  qb.select([
-    'b.id AS id',
-    'b.warehouse_id AS warehouse_id',
-    'w.code AS warehouse_code',
-    'w.name AS warehouse_name',
-
-    'b.sku_id AS sku_id',
-    's.code AS sku_code',
-    's.name AS sku_name',
-
-    'w.owner_id AS distributor_id',
-    'dist.code AS distributor_code',
-    'dist.name AS distributor_name',
-
-    'b.qty_on_hand AS qty_on_hand',
-    'b.qty_reserved AS qty_reserved',
-
-    'p.min_qty AS min_qty',
-    'p.max_qty AS max_qty',
-
-    'b.updated_at AS updated_at',
-  ]);
+  const sql = qb.getSql();
+  const params = qb.getParameters();
+  console.log('SQL=', sql);
+  console.log('PARAMS=', params);
 
   const total = await qb.getCount();
-  const rows = await qb.offset(skip).limit(limit).getRawMany();
+  const rows = await qb.select(['b.id AS id']).offset(skip).limit(limit).getRawMany();
 
   return { page, limit, total, pages: Math.ceil(total / limit), rows };
 }
+
 
 
 }
