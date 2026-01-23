@@ -378,20 +378,34 @@ if (Number(auth.user_type) === UserType.EMPLOYEE) {
   return { isAdmin: false, allowedWarehouseIds: whRows.map((r: any) => String(r.id)) };
 }
 
-async resolveInventoryWarehouseScopeForAlerts(auth: AuthUser) {
-  // employees: all warehouses (or at least distributor + company)
-  if (Number(auth.user_type) === UserType.EMPLOYEE) {
+async resolveInventoryWarehouseScopeForAlerts(auth: AuthUser): Promise<{
+  isAdmin: boolean;
+  allowedWarehouseIds: string[];
+}> {
+  const userId = this.actorId(auth);
+  if (!userId) return { isAdmin: false, allowedWarehouseIds: [] };
+
+  const companyId = String(auth.company_id);
+
+  // ✅ Treat "not distributor/sub-distributor user" as employee/admin/system
+  // (so admin/system users always see alerts across all warehouses)
+  const ut = Number(auth.user_type);
+
+  const isDistUser = ut === UserType.DISTRIBUTOR_USER;
+  const isSubDistUser = ut === UserType.SUB_DISTRIBUTOR_USER;
+
+  if (!isDistUser && !isSubDistUser) {
     const rows = await this.whRepo
       .createQueryBuilder('w')
       .select(['w.id AS id'])
-      .where('w.company_id=:cid', { cid: String(auth.company_id) })
+      .where('w.company_id=:cid', { cid: companyId })
       .andWhere('w.deleted_at IS NULL')
       .getRawMany();
 
-    return { isAdmin: true, allowedWarehouseIds: rows.map(r => String(r.id)) };
+    return { isAdmin: true, allowedWarehouseIds: rows.map((r: any) => String(r.id)) };
   }
 
-  // others: same as existing logic
+  // ✅ distributor/sub-distributor and org users keep existing rules
   return this.resolveInventoryWarehouseScope(auth);
 }
 

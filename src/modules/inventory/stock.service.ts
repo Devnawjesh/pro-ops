@@ -189,121 +189,115 @@ export class StockService {
 
     return { page, limit, total, pages: Math.ceil(total / limit), rows };
   }
- async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
-    // Company scope enforcement (optional but recommended)
-    // If you allow cross-company in same token, remove this check.
-    if (dto.companyId && String(dto.companyId) !== String(auth.company_id)) {
-      throw new ForbiddenException('Invalid company scope');
-    }
-
-    const company_id = String(dto.companyId ?? auth.company_id);
-
-    // ✅ Alerts scope: EMPLOYEE => all warehouses; others => existing scope rules
-    const scope = await this.common.resolveInventoryWarehouseScopeForAlerts(auth);
-    const allowedWarehouseIds = scope.allowedWarehouseIds ?? [];
-    if (!allowedWarehouseIds.length) throw new ForbiddenException('No inventory scope assigned');
-
-    const { page, limit, skip } = this.common.normalizePage(dto as any);
-
-    // Base query (filters + policy join)
-    const baseQb = this.balRepo
-      .createQueryBuilder('b')
-      .innerJoin(
-        'md_warehouse',
-        'w',
-        `w.id = b.warehouse_id
-         AND w.company_id = b.company_id
-         AND w.deleted_at IS NULL`,
-      )
-      .leftJoin(
-        'inv_distributor_stock_policy',
-        'p',
-        `p.company_id = b.company_id
-         AND p.deleted_at IS NULL
-         AND p.status = 'active'
-         AND p.distributor_id = w.owner_id
-         AND p.sku_id = b.sku_id`,
-      )
-      .where('b.company_id = :cid', { cid: company_id })
-      .andWhere('b.warehouse_id IN (:...wids)', { wids: allowedWarehouseIds })
-      .andWhere('w.owner_type = :ot', { ot: WarehouseOwnerType.DISTRIBUTOR }); // your DB value = 2
-
-    // Optional filters
-    if (dto.distributorId) {
-      baseQb.andWhere('w.owner_id = :did', { did: String(dto.distributorId) });
-    }
-    if (dto.skuId) {
-      baseQb.andWhere('b.sku_id = :sid', { sid: String(dto.skuId) });
-    }
-
-    // LOW / OVER conditions
-    if (dto.type === 'LOW') {
-      baseQb.andWhere('p.min_qty IS NOT NULL AND b.qty_on_hand <= p.min_qty');
-    } else {
-      baseQb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand >= p.max_qty');
-    }
-
-    // ✅ total: safe count (avoids TypeORM getCount() join issues)
-    const totalRow = await baseQb
-      .clone()
-      .select('COUNT(DISTINCT b.id)', 'cnt')
-      .getRawOne();
-
-    const total = Number(totalRow?.cnt ?? 0);
-
-    // ✅ rows: add sku + distributor joins for display
-    const rowsQb = baseQb
-      .clone()
-      .leftJoin(
-        'md_sku',
-        's',
-        `s.id = b.sku_id
-         AND s.company_id = b.company_id
-         AND s.deleted_at IS NULL`,
-      )
-      .leftJoin(
-        'md_distributor',
-        'dist',
-        `dist.id = w.owner_id
-         AND dist.company_id = b.company_id
-         AND dist.deleted_at IS NULL`,
-      )
-      .select([
-        'b.id AS id',
-
-        'b.warehouse_id AS warehouse_id',
-        'w.code AS warehouse_code',
-        'w.name AS warehouse_name',
-
-        'b.sku_id AS sku_id',
-        's.code AS sku_code',
-        's.name AS sku_name',
-
-        'w.owner_id AS distributor_id',
-        'dist.code AS distributor_code',
-        'dist.name AS distributor_name',
-
-        'b.qty_on_hand AS qty_on_hand',
-        'b.qty_reserved AS qty_reserved',
-
-        'p.min_qty AS min_qty',
-        'p.max_qty AS max_qty',
-
-        'b.updated_at AS updated_at',
-      ]);
-
-    // Sort
-    if (dto.type === 'LOW') rowsQb.orderBy('b.qty_on_hand', 'ASC');
-    else rowsQb.orderBy('b.qty_on_hand', 'DESC');
-
-    const rows = await rowsQb.offset(skip).limit(limit).getRawMany();
-
-    return {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit),
-      rows,
-    };
+async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
+  // enforce company scope (optional but recommended)
+  if (dto.companyId && String(dto.companyId) !== String(auth.company_id)) {
+    throw new ForbiddenException('Invalid company scope');
   }
+  const company_id = String(dto.companyId ?? auth.company_id);
+
+  // ensure numeric paging even if query gives strings
+  (dto as any).page = dto.page != null ? Number(dto.page) : undefined;
+  (dto as any).limit = dto.limit != null ? Number(dto.limit) : undefined;
+
+  // ✅ alerts scope
+  const scope = await this.common.resolveInventoryWarehouseScopeForAlerts(auth);
+  const allowedWarehouseIds = scope.allowedWarehouseIds ?? [];
+
+  // DEBUG (keep until confirmed)
+  console.log('ALERTS company_id=', company_id);
+  console.log('ALERTS auth.user_type=', auth.user_type);
+  console.log('ALERTS allowedWarehouseIds=', allowedWarehouseIds);
+
+  if (!allowedWarehouseIds.length) throw new ForbiddenException('No inventory scope assigned');
+
+  const { page, limit, skip } = this.common.normalizePage(dto as any);
+
+  const baseQb = this.balRepo
+    .createQueryBuilder('b')
+    .innerJoin(
+      'md_warehouse',
+      'w',
+      `w.id = b.warehouse_id
+       AND w.company_id = b.company_id
+       AND w.deleted_at IS NULL`,
+    )
+    .leftJoin(
+      'inv_distributor_stock_policy',
+      'p',
+      `p.company_id = b.company_id
+       AND p.deleted_at IS NULL
+       AND p.status = 'active'
+       AND p.distributor_id = w.owner_id
+       AND p.sku_id = b.sku_id`,
+    )
+    .where('b.company_id = :cid', { cid: company_id })
+    .andWhere('b.warehouse_id IN (:...wids)', { wids: allowedWarehouseIds })
+    .andWhere('w.owner_type = :ot', { ot: 2 }); // distributor warehouses in your DB
+
+  if (dto.distributorId) baseQb.andWhere('w.owner_id = :did', { did: String(dto.distributorId) });
+  if (dto.skuId) baseQb.andWhere('b.sku_id = :sid', { sid: String(dto.skuId) });
+
+  if (dto.type === 'LOW') {
+    baseQb.andWhere('p.min_qty IS NOT NULL AND b.qty_on_hand <= p.min_qty');
+  } else {
+    baseQb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand >= p.max_qty');
+  }
+
+  // ✅ safe count
+  const totalRow = await baseQb
+    .clone()
+    .select('COUNT(DISTINCT b.id)', 'cnt')
+    .getRawOne();
+  const total = Number(totalRow?.cnt ?? 0);
+
+  // ✅ rows with display fields
+  const rowsQb = baseQb
+    .clone()
+    .leftJoin(
+      'md_sku',
+      's',
+      `s.id = b.sku_id
+       AND s.company_id = b.company_id
+       AND s.deleted_at IS NULL`,
+    )
+    .leftJoin(
+      'md_distributor',
+      'dist',
+      `dist.id = w.owner_id
+       AND dist.company_id = b.company_id
+       AND dist.deleted_at IS NULL`,
+    )
+    .select([
+      'b.id AS id',
+
+      'b.warehouse_id AS warehouse_id',
+      'w.code AS warehouse_code',
+      'w.name AS warehouse_name',
+
+      'b.sku_id AS sku_id',
+      's.code AS sku_code',
+      's.name AS sku_name',
+
+      'w.owner_id AS distributor_id',
+      'dist.code AS distributor_code',
+      'dist.name AS distributor_name',
+
+      'b.qty_on_hand AS qty_on_hand',
+      'b.qty_reserved AS qty_reserved',
+
+      'p.min_qty AS min_qty',
+      'p.max_qty AS max_qty',
+
+      'b.updated_at AS updated_at',
+    ]);
+
+  if (dto.type === 'LOW') rowsQb.orderBy('b.qty_on_hand', 'ASC');
+  else rowsQb.orderBy('b.qty_on_hand', 'DESC');
+
+  const rows = await rowsQb.offset(skip).limit(limit).getRawMany();
+
+  return { page, limit, total, pages: Math.ceil(total / limit), rows };
+}
+
 }
