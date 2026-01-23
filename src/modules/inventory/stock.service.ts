@@ -190,6 +190,8 @@ export class StockService {
     return { page, limit, total, pages: Math.ceil(total / limit), rows };
   }
 async listAlerts(auth: AuthUser, dto: ListStockAlertsDto) {
+  console.log('ALERTS_MARKER_20260123_1620', dto);
+
   // hard assumptions as you requested
   const company_id = 1;
 
