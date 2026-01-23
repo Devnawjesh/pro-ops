@@ -7,6 +7,7 @@ import { Permissions } from 'src/common/decorators/permissions.decorator';
 import { StockService } from '../stock.service';
 import { ListStockDto } from '../dto/stock/list-stock.dto';
 import { ListLotDto } from '../dto/stock/list-lot.dto';
+import { ListStockAlertsDto } from '../dto/stock/ListStockAlertsDto.dto';
 
 @Controller('inventory/stocks')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -23,4 +24,10 @@ export class StockController {
   lots(@Req() req: any, @Query() q: ListLotDto) {
     return this.service.listLots(req.user, q);
   }
+  @Get('/alerts')
+  @Permissions('inv_stock.alerts.list')
+  listAlerts(@Req() req: any, @Query() dto: ListStockAlertsDto) {
+    return this.service.listAlerts(req.user, dto);
+  }
+
 }

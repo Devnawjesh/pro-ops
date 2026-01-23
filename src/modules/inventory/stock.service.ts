@@ -8,6 +8,7 @@ import { ListStockDto } from './dto/stock/list-stock.dto';
 import { InventoryCommonService, AuthUser } from './inventory-common.service'; 
 import { InvLot } from './entities/inv_lot.entity'; 
 import { ListLotDto } from './dto/stock/list-lot.dto';
+import { ListStockAlertsDto } from './dto/stock/ListStockAlertsDto.dto';
 
 @Injectable()
 export class StockService {
@@ -188,4 +189,79 @@ export class StockService {
 
     return { page, limit, total, pages: Math.ceil(total / limit), rows };
   }
+  async listAlerts(auth: any, dto: ListStockAlertsDto) {
+  const scope = await this.common.resolveInventoryWarehouseScope(auth);
+  const allowed = scope.allowedWarehouseIds ?? [];
+  if (!allowed.length) throw new ForbiddenException('No inventory scope assigned');
+
+  const page = dto.page ?? 1;
+  const limit = Math.min(dto.limit ?? 50, 200);
+  const skip = (page - 1) * limit;
+
+  const qb = this.balRepo
+    .createQueryBuilder('b')
+    .innerJoin('md_warehouse', 'w',
+      `w.id = b.warehouse_id
+       AND w.company_id = b.company_id
+       AND w.deleted_at IS NULL`
+    )
+    .leftJoin('inv_distributor_stock_policy', 'p',
+      `p.company_id = b.company_id
+       AND p.deleted_at IS NULL
+       AND p.status = 'active'
+       AND p.distributor_id::text = w.owner_id::text
+       AND p.sku_id::text = b.sku_id::text`
+    )
+    .leftJoin('md_sku', 's',
+      `s.id = b.sku_id
+       AND s.company_id = b.company_id
+       AND s.deleted_at IS NULL`
+    )
+    // CHANGE THIS JOIN to your distributor master table
+    .leftJoin('md_distributor', 'd',
+      `d.id::text = w.owner_id::text
+       AND d.company_id = b.company_id
+       AND d.deleted_at IS NULL`
+    )
+    .where('b.company_id = :cid', { cid: dto.companyId })
+    .andWhere('b.warehouse_id IN (:...wids)', { wids: allowed })
+    .andWhere('w.owner_type = :ot', { ot: 'DISTRIBUTOR' });
+
+  // optional filters
+  if (dto.distributorId) qb.andWhere('w.owner_id::text = :did', { did: dto.distributorId });
+  if (dto.skuId) qb.andWhere('b.sku_id::text = :sid', { sid: dto.skuId });
+
+  // LOW / OVER conditions
+  if (dto.type === 'LOW') {
+    qb.andWhere('p.min_qty IS NOT NULL AND b.qty_on_hand::numeric <= p.min_qty');
+    qb.orderBy('b.qty_on_hand', 'ASC');
+  } else {
+    qb.andWhere('p.max_qty IS NOT NULL AND b.qty_on_hand::numeric >= p.max_qty');
+    qb.orderBy('b.qty_on_hand', 'DESC');
+  }
+
+  qb.select([
+    'b.warehouse_id AS "warehouseId"',
+    'w.code AS "warehouseCode"',     // adjust if your column name differs
+    'w.name AS "warehouseName"',
+    'w.owner_id AS "distributorId"',
+
+    'd.code AS "distributorCode"',
+    'd.name AS "distributorName"',
+
+    'b.sku_id AS "skuId"',
+    's.code AS "skuCode"',
+    's.name AS "skuName"',
+
+    'b.qty_on_hand AS "qtyOnHand"',
+    'p.min_qty AS "minQty"',
+    'p.max_qty AS "maxQty"',
+  ]);
+
+  qb.offset(skip).limit(limit);
+
+  const [rows, total] = await Promise.all([qb.getRawMany(), qb.getCount()]);
+  return { page, limit, total, rows };
+}
+
 }
