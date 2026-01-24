@@ -269,6 +269,20 @@ export class UsersAdminService {
     return this.roleRepo.find({ order: { id: 'ASC' as any } });
   }
 
+  async getRolePermissions(roleId: string) {
+    await this.getRoleOrThrow(roleId);
+
+    const rows = await this.rolePermRepo
+      .createQueryBuilder('rp')
+      .innerJoinAndSelect('rp.permission', 'p')
+      .where('rp.role_id = :roleId', { roleId })
+      .orderBy('p.code', 'ASC')
+      .getMany();
+
+    const permissions = rows.map((rp) => rp.permission);
+    return { total: permissions.length, rows: permissions };
+  }
+
   async createRole(code: string, name: string) {
     if (!code?.trim()) throw new BadRequestException('code is required');
     if (!name?.trim()) throw new BadRequestException('name is required');

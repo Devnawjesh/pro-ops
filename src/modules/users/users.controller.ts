@@ -86,11 +86,17 @@ updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.admin.setUserRoles(userId, body.role_codes);
   }
 
-  @Permissions('roles:view')
-  @Get('roles')
-  async listRoles() {
-    return this.admin.listRoles();
-  }
+@Permissions('roles:view')
+@Get('roles')
+async listRoles() {
+  return this.admin.listRoles();
+}
+
+@Permissions('roles:view')
+@Get('roles/:id/permissions')
+getRolePermissions(@Param('id') roleId: string) {
+  return this.admin.getRolePermissions(roleId);
+}
 
   @Permissions('roles:manage')
   @Post('roles')
@@ -118,10 +124,16 @@ createPermission(
    * body.permission_codes = ["users:view","users:manage", ...]
    */
   @Permissions('roles:manage')
-@Patch('roles/:id/permissions')
-addRolePerms(@Param('id') roleId: string, @Body() body: { permission_codes: string[] }) {
-  return this.admin.addRolePermissions(roleId, body.permission_codes);
-}
+  @Post('roles/:id/permissions')
+  addRolePermsPost(@Param('id') roleId: string, @Body() body: { permission_codes: string[] }) {
+    return this.admin.addRolePermissions(roleId, body.permission_codes);
+  }
+
+  @Permissions('roles:manage')
+  @Patch('roles/:id/permissions')
+  addRolePerms(@Param('id') roleId: string, @Body() body: { permission_codes: string[] }) {
+    return this.admin.addRolePermissions(roleId, body.permission_codes);
+  }
 
 @Permissions('roles:manage')
 @Patch('roles/:id/permissions/remove')
