@@ -62,6 +62,32 @@ export class SeedService {
       }
     }
 
+    const extra: PermissionSeedRow[] = [
+      {
+        code: 'sales_reports:distributor_totals',
+        module: 'sales_reports',
+        action: PermissionAction.VIEW,
+        description: 'sales reports distributor totals',
+        status: 1,
+      },
+      {
+        code: 'sales_reports:outlet_totals',
+        module: 'sales_reports',
+        action: PermissionAction.VIEW,
+        description: 'sales reports outlet totals',
+        status: 1,
+      },
+      {
+        code: 'sales_reports:sku_daily',
+        module: 'sales_reports',
+        action: PermissionAction.VIEW,
+        description: 'sales reports sku daily',
+        status: 1,
+      },
+    ];
+
+    desired.push(...extra);
+
     const existing = await this.permRepo.find();
     const existingCodes = new Set(existing.map((p) => p.code));
 
@@ -101,6 +127,25 @@ export class SeedService {
 if (toMap.length) {
   await this.rolePermRepo.insert(toMap);
 }
+
+    // Role ID 1 gets sales report permissions (if role exists)
+    const role1 = await this.roleRepo.findOne({ where: { id: '1' } as any });
+    if (role1) {
+      const reportCodes = ['sales_reports:distributor_totals', 'sales_reports:outlet_totals', 'sales_reports:sku_daily'];
+      const reportPerms = await this.permRepo.find({ where: { code: In(reportCodes) } });
+      if (reportPerms.length) {
+        const existing = await this.rolePermRepo.find({ where: { role_id: role1.id } as any });
+        const existingPermIds = new Set(existing.map((m) => m.permission_id));
+
+        const toInsert = reportPerms
+          .filter((p) => !existingPermIds.has(p.id))
+          .map((p) => ({ role_id: role1.id, permission_id: p.id } as any));
+
+        if (toInsert.length) {
+          await this.rolePermRepo.insert(toInsert);
+        }
+      }
+    }
 
 
     // Example: RSM

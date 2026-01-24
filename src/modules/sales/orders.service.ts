@@ -647,7 +647,11 @@ async getOne(auth: AuthUser, id: string) {
 
       out.id as outlet_id,
       out.code as outlet_code,
-      out.name as outlet_name
+      out.name as outlet_name,
+
+      u.id as created_by_user_id,
+      u.full_name as created_by_user_name,
+      u.mobile as created_by_user_mobile
 
     from so_order o
     left join md_distributor d
@@ -658,6 +662,9 @@ async getOne(auth: AuthUser, id: string) {
       on out.company_id=o.company_id
      and out.id=o.outlet_id
      and out.deleted_at is null
+    left join md_user u
+      on u.company_id=o.company_id
+     and u.id=o.created_by_user_id
     where o.company_id=$1 and o.id=$2
     limit 1
     `,
@@ -673,6 +680,11 @@ async getOne(auth: AuthUser, id: string) {
         outlet_id: metaRows[0].outlet_id != null ? String(metaRows[0].outlet_id) : null,
         outlet_code: metaRows[0].outlet_code ?? null,
         outlet_name: metaRows[0].outlet_name ?? null,
+
+        created_by_user_id:
+          metaRows[0].created_by_user_id != null ? String(metaRows[0].created_by_user_id) : null,
+        created_by_user_name: metaRows[0].created_by_user_name ?? null,
+        created_by_user_mobile: metaRows[0].created_by_user_mobile ?? null,
       }
     : {
         distributor_id: null,
@@ -681,6 +693,9 @@ async getOne(auth: AuthUser, id: string) {
         outlet_id: null,
         outlet_code: null,
         outlet_name: null,
+        created_by_user_id: null,
+        created_by_user_name: null,
+        created_by_user_mobile: null,
       };
 
   // ---- items with sku code + name ----
@@ -709,7 +724,12 @@ async getOne(auth: AuthUser, id: string) {
     success: true,
     message: 'OK',
     data: {
-      order: o,
+      order: {
+        ...o,
+        created_by_user_id: meta.created_by_user_id ?? o.created_by_user_id,
+        created_by_user_name: meta.created_by_user_name,
+        created_by_user_mobile: meta.created_by_user_mobile,
+      },
       outlet: {
         id: meta.outlet_id,
         code: meta.outlet_code,

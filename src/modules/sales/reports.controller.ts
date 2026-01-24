@@ -13,19 +13,19 @@ export class SalesReportsController {
   constructor(private readonly orders: OrdersService) {}
 
   @Get('distributor-totals')
-  @Permissions('sales_orders:list')
+  @Permissions('sales_reports:distributor_totals')
   distributorTotals(@Req() req: any, @Query() q: ReportSalesDto) {
     return this.orders.reportDistributorTotals(req.user, q);
   }
 
   @Get('outlet-totals')
-  @Permissions('sales_orders:list')
+  @Permissions('sales_reports:outlet_totals')
   outletTotals(@Req() req: any, @Query() q: ReportSalesDto) {
     return this.orders.reportOutletTotals(req.user, q);
   }
 
   @Get('sku-daily')
-  @Permissions('sales_orders:list')
+  @Permissions('sales_reports:sku_daily')
   skuDaily(@Req() req: any, @Query() q: ReportSalesDailySkuDto) {
     return this.orders.reportSkuDaily(req.user, q);
   }
