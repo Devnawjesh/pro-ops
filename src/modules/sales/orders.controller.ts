@@ -40,7 +40,7 @@ export class OrdersController {
     return this.service.submit(req.user, id);
   }
 
-  // Approve (SUBMITTED -> APPROVED + reserve stock)
+  // Approve (SUBMITTED -> APPROVED + stock out)
   @Post(':id/approve')
   @Permissions('sales_orders:approve')
   approve(@Req() req: any, @Param('id') id: string) {

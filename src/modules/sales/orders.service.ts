@@ -11,8 +11,6 @@ import { DataSource, Repository, Brackets } from 'typeorm';
 import { SoOrder } from './entities/so_order.entity';
 import { SoOrderItem } from './entities/so_order_item.entity';
 import { SoAllocation } from './entities/so_allocation.entity';
-import { SoAllocationItem } from './entities/so_allocation_item.entity';
-import { SoAllocationLot } from './entities/so_allocation_lot.entity';
 
 import { PricingService } from '../pricing/pricing.service';
 import { InventoryCommonService } from '../inventory/inventory-common.service';
@@ -23,7 +21,9 @@ import { ListOrderDto } from './dto/list-order.dto';
 import { RejectOrderDto } from './dto/reject-order.dto';
 
 import { SoOrderStatus } from './constants/order.enums';
-import { ScopeType, Status, UserType, WarehouseOwnerType } from '../../common/constants/enums';
+import { InvTxnType, RefDocType, ScopeType, UserType, WarehouseOwnerType } from '../../common/constants/enums';
+import { InvTxn } from '../inventory/entities/inv_txn.entity';
+import { InvTxnLot } from '../inventory/entities/inv_txn_lot.entity';
 
 type AuthUser = {
   company_id: string;
@@ -31,6 +31,7 @@ type AuthUser = {
   id?: string;
   sub?: string;
   user_type?: number;
+  roles?: Array<{ id?: string; code?: string; name?: string }>;
 };
 type PricedLine = {
   sku_id: string;
@@ -57,8 +58,6 @@ export class OrdersService {
     @InjectRepository(SoOrder) private readonly orderRepo: Repository<SoOrder>,
     @InjectRepository(SoOrderItem) private readonly itemRepo: Repository<SoOrderItem>,
     @InjectRepository(SoAllocation) private readonly allocRepo: Repository<SoAllocation>,
-    @InjectRepository(SoAllocationItem) private readonly allocItemRepo: Repository<SoAllocationItem>,
-    @InjectRepository(SoAllocationLot) private readonly allocLotRepo: Repository<SoAllocationLot>,
 
     private readonly pricing: PricingService,
     private readonly inv: InventoryCommonService,
@@ -70,6 +69,15 @@ export class OrdersService {
     const v = auth.user_id ?? auth.id ?? auth.sub;
     return v ? String(v) : null;
  }
+
+  private hasRole(auth: AuthUser, code: string) {
+    return (auth.roles ?? []).some((r) => String(r.code ?? '') === code);
+  }
+
+  private async hasGlobalScope(auth: AuthUser): Promise<boolean> {
+    if (Number(auth.user_type) !== UserType.EMPLOYEE) return false;
+    return this.hasRole(auth, 'SUPER_ADMIN');
+  }
 
   private assertISODate(date: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new BadRequestException('date must be YYYY-MM-DD');
@@ -516,7 +524,7 @@ async listPendingApprovals(auth: AuthUser, q: ListOrderDto) {
   }
 
   // =========================================================
-  // APPROVE (reserve stock + create allocations)
+  // APPROVE (final confirmation => stock OUT, no allocations)
   // =========================================================
   async approve(auth: AuthUser, id: string) {
     const uid = this.actorId(auth);
@@ -535,77 +543,66 @@ async listPendingApprovals(auth: AuthUser, q: ListOrderDto) {
     if (!warehouse_id) throw new ConflictException('No distributor warehouse found for this order');
 
     return await this.ds.transaction(async (manager) => {
-      // prevent double allocation
-      const existingAlloc = await manager.getRepository(SoAllocation).findOne({
-        where: { company_id: auth.company_id, order_id: o.id } as any,
-      });
-      if (existingAlloc) throw new ConflictException('Order already allocated');
+      const approvedAt = new Date();
 
-      // create allocation header
-      const alloc = await manager.getRepository(SoAllocation).save(
-        manager.create(SoAllocation, {
-          company_id: auth.company_id,
-          order_id: o.id,
-          warehouse_id,
-          allocated_at: new Date(),
-          allocated_by_user_id: uid,
-          status: Status.ACTIVE,
-        } as any),
-      );
-
-      // reserve per line FIFO lots
+      // stock out per line FIFO lots
       for (const it of items) {
         const qty = String(it.qty);
+        const qtyOut = Number(qty);
+        if (!Number.isFinite(qtyOut) || qtyOut <= 0) throw new BadRequestException('Invalid qty');
 
-        const allocItem = await manager.getRepository(SoAllocationItem).save(
-          manager.create(SoAllocationItem, {
+        const txn = await manager.getRepository(InvTxn).save(
+          manager.getRepository(InvTxn).create({
             company_id: auth.company_id,
-            allocation_id: alloc.id,
-            order_item_id: it.id,
-            sku_id: it.sku_id,
-            qty_allocated: qty,
-            qty_invoiced: '0',
+            txn_time: approvedAt,
+            txn_type: InvTxnType.ISSUE_BY_INVOICE,
+            warehouse_id,
+            sku_id: String(it.sku_id),
+            qty_in: '0',
+            qty_out: String(qtyOut),
+            ref_doc_type: RefDocType.ORDER,
+            ref_doc_id: String(o.id),
+            remarks: o.order_no ?? null,
+            created_by: uid,
           } as any),
         );
 
-        // FIFO lots: this will DECREASE inv_lot.qty_available (your method does it)
+        // FIFO lots: this will DECREASE inv_lot.qty_available
         const lots = await this.inv.allocateLotsFIFO(manager, {
           company_id: auth.company_id,
           warehouse_id,
-          sku_id: it.sku_id,
-          qty_out: qty,
+          sku_id: String(it.sku_id),
+          qty_out: String(qtyOut),
         });
 
-        // reserve in stock_balance: qty_reserved += qty
-        await this.inv.applyBalanceDelta(manager, {
-          company_id: auth.company_id,
-          warehouse_id,
-          sku_id: it.sku_id,
-          delta_on_hand: '0',
-          delta_reserved: qty,
-        });
-
-        // record allocation lots
         for (const l of lots) {
-          await manager.getRepository(SoAllocationLot).save(
-            manager.create(SoAllocationLot, {
+          await manager.getRepository(InvTxnLot).save(
+            manager.getRepository(InvTxnLot).create({
               company_id: auth.company_id,
-              allocation_item_id: allocItem.id,
+              inv_txn_id: String((txn as any).id),
               lot_id: l.lot_id,
-              qty_reserved: String(l.qty),
-              qty_consumed: '0',
+              qty: String(l.qty),
             } as any),
           );
         }
+
+        // reduce stock on-hand (no reservations)
+        await this.inv.applyBalanceDelta(manager, {
+          company_id: auth.company_id,
+          warehouse_id,
+          sku_id: String(it.sku_id),
+          delta_on_hand: String(-qtyOut),
+          delta_reserved: '0',
+        });
       }
 
       // approve header
       o.status = SoOrderStatus.APPROVED;
-      o.approved_at = new Date();
+      o.approved_at = approvedAt;
       o.approved_by_user_id = uid;
       await manager.getRepository(SoOrder).save(o);
 
-      return { success: true, message: 'OK', data: { order: o, allocation_id: alloc.id, warehouse_id } };
+      return { success: true, message: 'OK', data: { order: o, warehouse_id } };
     });
   }
 
@@ -762,29 +759,33 @@ async list(auth: AuthUser, q: ListOrderDto) {
     qb.andWhere('o.distributor_id::text = :did', { did: String(distributorId) });
   }
 
-  // 2) Employee users: hierarchy scope (if exists) + fallback "my orders"
+  // 2) Employee users: global admin => all, otherwise hierarchy scope + fallback "my orders"
   else if (Number(auth.user_type) === UserType.EMPLOYEE) {
-    const allowedTerritoryIds = await this.resolveAllowedTerritoryIdsForEmployee(auth); // returns string[]
-
-    if (allowedTerritoryIds.length > 0) {
-      qb.andWhere(
-        new Brackets((b) => {
-          b.where('o.org_node_id = ANY(:tids)', {
-            tids: allowedTerritoryIds.map((x) => Number(x)),
-          })
-            // ✅ fallback: show my orders even if org_node_id mapping/scope mismatch
-            .orWhere('o.created_by_user_id::text = :me', { me: String(uid) })
-            .orWhere('o.submitted_by_user_id::text = :me', { me: String(uid) });
-        }),
-      );
+    if (await this.hasGlobalScope(auth)) {
+      // no restriction
     } else {
-      // ✅ No scope rows found -> at least show my orders (prevents "territory user sees nothing")
-      qb.andWhere(
-        new Brackets((b) => {
-          b.where('o.created_by_user_id::text = :me', { me: String(uid) })
-            .orWhere('o.submitted_by_user_id::text = :me', { me: String(uid) });
-        }),
-      );
+      const allowedTerritoryIds = await this.resolveAllowedTerritoryIdsForEmployee(auth); // returns string[]
+
+      if (allowedTerritoryIds.length > 0) {
+        qb.andWhere(
+          new Brackets((b) => {
+            b.where('o.org_node_id = ANY(:tids)', {
+              tids: allowedTerritoryIds.map((x) => Number(x)),
+            })
+              // ✅ fallback: show my orders even if org_node_id mapping/scope mismatch
+              .orWhere('o.created_by_user_id::text = :me', { me: String(uid) })
+              .orWhere('o.submitted_by_user_id::text = :me', { me: String(uid) });
+          }),
+        );
+      } else {
+        // ✅ No scope rows found -> at least show my orders (prevents "territory user sees nothing")
+        qb.andWhere(
+          new Brackets((b) => {
+            b.where('o.created_by_user_id::text = :me', { me: String(uid) })
+              .orWhere('o.submitted_by_user_id::text = :me', { me: String(uid) });
+          }),
+        );
+      }
     }
   }
 
@@ -901,6 +902,8 @@ private async assertOrderReadableByScope(auth: AuthUser, o: SoOrder) {
   // plus always allow own orders (created/submitted)
   // ---------------------------------------------------------
   if (utype === UserType.EMPLOYEE) {
+    if (await this.hasGlobalScope(auth)) return;
+
     // ✅ always allow own orders (very important for territory rep experience)
     if (
       String(o.created_by_user_id) === String(uid) ||
@@ -931,9 +934,9 @@ private async assertOrderReadableByScope(auth: AuthUser, o: SoOrder) {
 }
 
 
-private async resolveAllowedTerritoryIdsForEmployee(auth: AuthUser): Promise<string[]> {
-  const uid = this.actorId(auth);
-  if (!uid) throw new ForbiddenException('Unauthenticated');
+  private async resolveAllowedTerritoryIdsForEmployee(auth: AuthUser): Promise<string[]> {
+    const uid = this.actorId(auth);
+    if (!uid) throw new ForbiddenException('Unauthenticated');
 
   const scopes = await this.ds.query(
     `
@@ -983,6 +986,168 @@ private async resolveAllowedTerritoryIdsForEmployee(auth: AuthUser): Promise<str
   return (rows ?? []).map((r: any) => String(r.id));
 }
 
+private async applyOrderVisibilityScope(qb: any, auth: AuthUser, uid: string) {
+  if (
+    Number(auth.user_type) === UserType.DISTRIBUTOR_USER ||
+    Number(auth.user_type) === UserType.SUB_DISTRIBUTOR_USER
+  ) {
+    const distributorId = await this.getMyDistributorId(auth);
+    if (!distributorId) {
+      qb.andWhere('1=0');
+      return;
+    }
+    qb.andWhere('o.distributor_id::text = :did', { did: String(distributorId) });
+    return;
+  }
+
+  if (Number(auth.user_type) === UserType.EMPLOYEE) {
+    if (await this.hasGlobalScope(auth)) return;
+
+    const allowedTerritoryIds = await this.resolveAllowedTerritoryIdsForEmployee(auth);
+
+    if (allowedTerritoryIds.length > 0) {
+      qb.andWhere(
+        new Brackets((b) => {
+          b.where('o.org_node_id = ANY(:tids)', {
+            tids: allowedTerritoryIds.map((x) => Number(x)),
+          })
+            .orWhere('o.created_by_user_id::text = :me', { me: String(uid) })
+            .orWhere('o.submitted_by_user_id::text = :me', { me: String(uid) });
+        }),
+      );
+    } else {
+      qb.andWhere(
+        new Brackets((b) => {
+          b.where('o.created_by_user_id::text = :me', { me: String(uid) })
+            .orWhere('o.submitted_by_user_id::text = :me', { me: String(uid) });
+        }),
+      );
+    }
+  }
+}
+
+  // =========================================================
+  // REPORTS
+  // =========================================================
+  async reportDistributorTotals(auth: AuthUser, q: { from_date?: string; to_date?: string; distributor_id?: string }) {
+    const uid = this.actorId(auth);
+    if (!uid) throw new ForbiddenException('Unauthenticated');
+
+    const qb = this.orderRepo
+      .createQueryBuilder('o')
+      .leftJoin('md_distributor', 'd', 'd.id=o.distributor_id AND d.company_id=o.company_id AND d.deleted_at IS NULL')
+      .where('o.company_id = :cid', { cid: auth.company_id })
+      .andWhere('o.status = :st', { st: SoOrderStatus.APPROVED });
+
+    await this.applyOrderVisibilityScope(qb, auth, uid);
+
+    if (q.from_date) qb.andWhere('o.order_date >= :fd', { fd: q.from_date });
+    if (q.to_date) qb.andWhere('o.order_date <= :td', { td: q.to_date });
+
+    if (q.distributor_id && (await this.hasGlobalScope(auth))) {
+      qb.andWhere('o.distributor_id::text = :did', { did: String(q.distributor_id) });
+    }
+
+    const rows = await qb
+      .select([
+        'o.distributor_id AS distributor_id',
+        'd.code AS distributor_code',
+        'd.name AS distributor_name',
+        'COALESCE(SUM(o.net_amount::numeric),0) AS total_sales',
+      ])
+      .groupBy('o.distributor_id')
+      .addGroupBy('d.code')
+      .addGroupBy('d.name')
+      .orderBy('total_sales', 'DESC')
+      .getRawMany();
+
+    return { success: true, message: 'OK', rows };
+  }
+
+  async reportOutletTotals(auth: AuthUser, q: { from_date?: string; to_date?: string; outlet_id?: string }) {
+    const uid = this.actorId(auth);
+    if (!uid) throw new ForbiddenException('Unauthenticated');
+
+    const qb = this.orderRepo
+      .createQueryBuilder('o')
+      .leftJoin('md_outlet', 'out', 'out.id=o.outlet_id AND out.company_id=o.company_id AND out.deleted_at IS NULL')
+      .where('o.company_id = :cid', { cid: auth.company_id })
+      .andWhere('o.status = :st', { st: SoOrderStatus.APPROVED });
+
+    await this.applyOrderVisibilityScope(qb, auth, uid);
+
+    if (q.from_date) qb.andWhere('o.order_date >= :fd', { fd: q.from_date });
+    if (q.to_date) qb.andWhere('o.order_date <= :td', { td: q.to_date });
+
+    if (q.outlet_id && (await this.hasGlobalScope(auth))) {
+      qb.andWhere('o.outlet_id::text = :oid', { oid: String(q.outlet_id) });
+    }
+
+    const rows = await qb
+      .select([
+        'o.outlet_id AS outlet_id',
+        'out.code AS outlet_code',
+        'out.name AS outlet_name',
+        'COALESCE(SUM(o.net_amount::numeric),0) AS total_sales',
+      ])
+      .groupBy('o.outlet_id')
+      .addGroupBy('out.code')
+      .addGroupBy('out.name')
+      .orderBy('total_sales', 'DESC')
+      .getRawMany();
+
+    return { success: true, message: 'OK', rows };
+  }
+
+  async reportSkuDaily(
+    auth: AuthUser,
+    q: { from_date?: string; to_date?: string; distributor_id?: string; outlet_id?: string; sku_id?: string; limit?: number },
+  ) {
+    const uid = this.actorId(auth);
+    if (!uid) throw new ForbiddenException('Unauthenticated');
+
+    const qb = this.orderRepo
+      .createQueryBuilder('o')
+      .innerJoin('so_order_item', 'i', 'i.order_id=o.id AND i.company_id=o.company_id')
+      .leftJoin('md_sku', 's', 's.id=i.sku_id AND s.company_id=i.company_id AND s.deleted_at IS NULL')
+      .where('o.company_id = :cid', { cid: auth.company_id })
+      .andWhere('o.status = :st', { st: SoOrderStatus.APPROVED });
+
+    await this.applyOrderVisibilityScope(qb, auth, uid);
+
+    if (q.from_date) qb.andWhere('o.order_date >= :fd', { fd: q.from_date });
+    if (q.to_date) qb.andWhere('o.order_date <= :td', { td: q.to_date });
+
+    if (q.distributor_id && (await this.hasGlobalScope(auth))) {
+      qb.andWhere('o.distributor_id::text = :did', { did: String(q.distributor_id) });
+    }
+    if (q.outlet_id && (await this.hasGlobalScope(auth))) {
+      qb.andWhere('o.outlet_id::text = :oid', { oid: String(q.outlet_id) });
+    }
+    if (q.sku_id) qb.andWhere('i.sku_id::text = :sid', { sid: String(q.sku_id) });
+
+    const limit = Math.min(200, Math.max(1, Number(q.limit ?? 200)));
+
+    const rows = await qb
+      .select([
+        'o.order_date AS order_date',
+        'i.sku_id AS sku_id',
+        's.code AS sku_code',
+        's.name AS sku_name',
+        'SUM(i.qty::numeric) AS total_qty',
+        'COALESCE(SUM(i.line_total::numeric),0) AS total_sales',
+      ])
+      .groupBy('o.order_date')
+      .addGroupBy('i.sku_id')
+      .addGroupBy('s.code')
+      .addGroupBy('s.name')
+      .orderBy('o.order_date', 'ASC')
+      .addOrderBy('total_sales', 'DESC')
+      .limit(limit)
+      .getRawMany();
+
+    return { success: true, message: 'OK', rows };
+  }
 
   private async pickDistributorWarehouse(company_id: string, distributor_id: string): Promise<string | null> {
     const rows = await this.ds.query(
